@@ -9,8 +9,8 @@ import multiprocessing
 ionName = "7Li"
 Z = 3
 mass = 7.01600343  # amu
-nps = 500
-energies = list(range(1050, 0, -100))  # in keV
+nps = 1000
+energies = list(range(50, 2001, 100))  # in keV
 target_name = "LiF"
 target_nElements = 2
 target_nLayers = 1
@@ -138,6 +138,65 @@ def writeLines(lines, srimFolder):
         trimFile.write(line)
     trimFile.close()
     
+#Set up to parse collision files of type C (Full recoil cascades)
+def parseCollisionC(filename):
+  startLine=10
+  inpFile = open(filename,"r")
+
+  lookingForRecoils=0
+
+  ionNum = 0
+  ionNums=[]
+  recoilAtoms=[]
+  recoilEnergies=[]
+  recoilXs=[]
+  recoilYs=[]
+  recoilZs=[]
+  recoilVacancies=[]
+  recoilReplacements=[]
+
+  for iline,line in enumerate(inpFile):
+    
+    #Skip header
+    if iline<28:
+      continue
+    elif "For Ion" in line:      
+      ionNum+=1
+      lookingForRecoils=0
+
+    elif "Recoil Atom" in line:
+      lookingForRecoils=1 
+    elif "===" in line:
+      lookingForRecoils=0
+    elif lookingForRecoils==1:
+      line=line.strip("\n")
+      line = line.replace('³', ' ')         # Replace weird delimiters with space
+      line = line.replace('Û', '')          # Remove the garbage Û characters
+      lineParts = line.strip().split()      # Split on whitespace into clean fields
+      if lookingForRecoils==1:
+        if int(lineParts[6])>0:
+          ionNums.append(ionNum)
+          recoilAtoms.append(int(lineParts[1]))
+          recoilEnergies.append(float(lineParts[2])/1.e-6) #MeV
+          recoilXs.append(float(lineParts[3])*0.1 - target_start_offset*0.1)
+          recoilYs.append(float(lineParts[4])*0.1 - 0)
+          recoilZs.append(float(lineParts[5])*0.1 - 0)
+          recoilVacancies.append(int(lineParts[6]))
+          recoilReplacements.append(int(lineParts[7]))
+    else:
+      continue
+  
+  events = {
+      "historyNum": np.array(ionNums, dtype=np.uint16),
+      "secondaryAtom": np.array(recoilAtoms, dtype=np.uint8),
+      "energy": np.array(recoilEnergies, dtype=np.float32),
+      "x": np.array(recoilXs, dtype=np.float32),
+      "y": np.array(recoilYs, dtype=np.float32),
+      "z": np.array(recoilZs, dtype=np.float32),
+      "nVacancies": np.array(recoilVacancies, dtype=np.uint16),
+  }
+  return events
+
 def run_single_energy(energy):
   global Z, mass, nps, target_name, target_start_offset
   global target_element_names, target_element_Zs, target_element_masses
