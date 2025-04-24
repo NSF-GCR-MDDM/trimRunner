@@ -1,12 +1,13 @@
 import os
 import numpy as np
 import pickle
+import lzma
 
 ionName = "7Li"
 Z = 3
 mass = 7.01600343 #amu
-energies = range(5,5005,10) #keV
-nps = 10001
+energies = range(5,10005,10) #keV
+nps = 5000
 
 target_name = "LiF"
 target_nElements = 2
@@ -35,7 +36,7 @@ srimFolder = "C:/Users/Sam/Desktop/SRIM_exe/"
 if not srimFolder.endswith("/"):
   srimFolder+="/"
 
-outputFolder = "C:/Users/Sam/Documents/Codes/trimRunner/outputs/{0}".format(target_name)
+outputFolder = "C:/Users/Sam/Documents/code/trimRunner/outputs/{0}/{1}/".format(target_name,ionName)
 if not os.path.exists(outputFolder):
   os.mkdir(outputFolder)
 
@@ -43,7 +44,7 @@ def makeTrimInputString(energy):
   lines=[]
   headerLine = "==> SRIM-2013.00 This file controls TRIM Calculations."
   ionHeaderLine = "Ion: Z1 ,  M1,  Energy (keV), Angle,Number,Bragg Corr,AutoSave Number."
-  ionLine = "     {0}     {1:.3f}     {2}     0     0     {4}     {5}".format(Z,mass,energy,nps,nps+1)
+  ionLine = "     {0}   {1:.3f}         {2}       0  {3} 0    {4}".format(Z,mass,energy,nps,nps+1)
   lines.append(headerLine)
   lines.append(ionHeaderLine)
   lines.append(ionLine)
@@ -55,7 +56,7 @@ def makeTrimInputString(energy):
 
   #Note, 1 = new file, 2 = extend
   diskHeaderLine = "Diskfiles (0=no,1=yes): Ranges, Backscatt, Transmit, Sputtered, Collisions(1=Ion;2=Ion+Recoils), Special EXYZ.txt file"
-  diskLine = "     0     0     0     0     2     1"
+  diskLine = "     0     0     0     0     2     0"
   lines.append(diskHeaderLine)
   lines.append(diskLine)
 
@@ -65,7 +66,7 @@ def makeTrimInputString(energy):
   lines.append(targetLine)
   
   plotHeaderLine = "PlotType (0-5); Plot Depths: Xmin, Xmax(Ang.) [=0 0 for Viewing Full Target]"
-  plotLine = "     0     {1}     {2}".format(target_start_offset,target_depth)
+  plotLine = "     0     {0}     {1}".format(target_start_offset,target_depth)
   lines.append(plotHeaderLine)
   lines.append(plotLine)
 
@@ -134,7 +135,7 @@ def makeTrimInputString(energy):
   return lines
 
 def writeLines(lines,srimFolder):
-  trimFile = open("{0}TRIM.IN".format(srimFolder),"w")
+  trimFile = open("{0}TRIM.in".format(srimFolder),"w")
   for line in lines:
     if not line.endswith("\n"):
       line+="\n"
@@ -143,12 +144,7 @@ def writeLines(lines,srimFolder):
 
 class CollisionEvent:
     def __init__(self, 
-               startX,startY,startZ,
-               recoilNums,recoilAtoms,recoilEnergies,recoilXs,recoilYs,recoilZs,recoilVacancies,recoilReplacements):
-        self.startX = startX
-        self.startY = startY
-        self.startZ = startZ
-        self.recoilNums = np.array(recoilNums)
+               recoilAtoms,recoilEnergies,recoilXs,recoilYs,recoilZs,recoilVacancies,recoilReplacements):
         self.recoilAtoms = np.array(recoilAtoms)
         self.recoilEnergies = np.array(recoilEnergies)
         #start location subtracted
@@ -168,12 +164,6 @@ def parseCollisionC(filename):
 
   lookingForRecoils=0
 
-  startEnergy=0
-  startX=0
-  startY=0
-  startZ=0
-
-  recoilNums=[]
   recoilAtoms=[]
   recoilEnergies=[]
   recoilXs=[]
@@ -183,17 +173,16 @@ def parseCollisionC(filename):
   recoilReplacements=[]
 
   for iline,line in enumerate(inpFile):
+    
     #Skip header
-    if iline<10:
+    if iline<28:
       continue
-    elif line.lstrip().startswith("Summary"):
-      events.append(CollisionEvent(
-               startX,startY,startZ,
-               recoilNums,recoilAtoms,recoilEnergies,recoilXs,recoilYs,recoilZs,recoilVacancies,recoilReplacements))
+    elif "For Ion" in line:
+      if len(recoilAtoms)>0:
+        events.append(CollisionEvent(recoilAtoms,recoilEnergies,recoilXs,recoilYs,recoilZs,recoilVacancies,recoilReplacements))
       
       lookingForRecoils=0
 
-      recoilNums=[]
       recoilAtoms=[]
       recoilEnergies=[]
       recoilXs=[]
@@ -202,25 +191,26 @@ def parseCollisionC(filename):
       recoilVacancies=[]
       recoilReplacements=[]
 
-    elif line.lstrip().startswith("Recoil"):
+    elif "Recoil Atom" in line:
       lookingForRecoils=1 
-    elif not line.lstrip().startswith("==="):
+    elif "===" in line:
+      lookingForRecoils=0
+    elif lookingForRecoils==1:
       line=line.strip("\n")
-      lineParts=line.split()
+      line = line.replace('³', ' ')         # Replace weird delimiters with space
+      line = line.replace('Û', '')          # Remove the garbage Û characters
+      lineParts = line.strip().split()      # Split on whitespace into clean fields
       if lookingForRecoils==1:
-        recoilNums.append(int(lineParts[0]))
-        recoilAtoms.append(int(lineParts[1]))
-        recoilEnergies.append(float(lineParts[3])/1.e-6) #MeV
-        recoilXs.append(float(lineParts[4])*0.1 - startX)
-        recoilYs.append(float(lineParts[5])*0.1 - startY)
-        recoilZs.append(float(lineParts[6])*0.1 - startZ)
-        recoilVacancies.append(int(lineParts[8]))
-        recoilReplacements.append(int(lineParts[9]))
-      else:
-        startEnergy = float(lineParts[1])*1.e-3
-        startX = float(lineParts[2])*0.1
-        startY = float(lineParts[3])*0.1
-        startZ = float(lineParts[4])*0.1
+        if int(lineParts[6])>0:
+          recoilAtoms.append(int(lineParts[1]))
+          recoilEnergies.append(float(lineParts[2])/1.e-6) #MeV
+          recoilXs.append(float(lineParts[3])*0.1 - target_start_offset*0.1)
+          recoilYs.append(float(lineParts[4])*0.1 - 0)
+          recoilZs.append(float(lineParts[5])*0.1 - 0)
+          recoilVacancies.append(int(lineParts[6]))
+          recoilReplacements.append(int(lineParts[7]))
+    else:
+      continue
   return events
 
 # ========== MAIN ==========
@@ -234,8 +224,8 @@ for energy in energies:
   os.system("TRIM.exe")  # This runs SRIM in batch mode 
 
   #Make output file
-  events = parseCollisionC("COLLISION.txt")
+  events = parseCollisionC(srimFolder+"SRIM Outputs/COLLISON.txt")
 
-  outFilename = outputFolder + "{0:02.3d}keV.pkl".format(energy/1000.)
-  with open(outFilename, "wb") as f:
-        pickle.dump(events, f)
+  outFilename = outputFolder + "{1:06.3f}_keV.pkl".format(ionName,energy/1000.)
+  with lzma.open(outFilename + ".xz", "wb") as f:
+      pickle.dump(events, f, protocol=pickle.HIGHEST_PROTOCOL)
