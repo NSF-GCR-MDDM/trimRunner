@@ -6,8 +6,8 @@ import lzma
 ionName = "7Li"
 Z = 3
 mass = 7.01600343 #amu
-energies = range(5,10005,10) #keV
-nps = 5000
+energies = range(25,2050,50) #keV
+nps = 500
 
 target_name = "LiF"
 target_nElements = 2
@@ -142,28 +142,15 @@ def writeLines(lines,srimFolder):
       trimFile.write(line)
   trimFile.close()
 
-class CollisionEvent:
-    def __init__(self, 
-               recoilAtoms,recoilEnergies,recoilXs,recoilYs,recoilZs,recoilVacancies,recoilReplacements):
-        self.recoilAtoms = np.array(recoilAtoms)
-        self.recoilEnergies = np.array(recoilEnergies)
-        #start location subtracted
-        self.recoilXs = np.array(recoilXs)
-        self.recoilYs = np.array(recoilYs)
-        self.recoilZs = np.array(recoilZs)
-        self.recoilVacancies = np.array(recoilVacancies)
-        self.recoilReplacements = np.array(recoilReplacements)
-        self.nVacancies = len(self.recoilVacancies)
-
 #Set up to parse collision files of type C (Full recoil cascades)
 def parseCollisionC(filename):
   startLine=10
   inpFile = open(filename,"r")
 
-  events=[]
-
   lookingForRecoils=0
 
+  ionNum = 0
+  ionNums=[]
   recoilAtoms=[]
   recoilEnergies=[]
   recoilXs=[]
@@ -177,19 +164,9 @@ def parseCollisionC(filename):
     #Skip header
     if iline<28:
       continue
-    elif "For Ion" in line:
-      if len(recoilAtoms)>0:
-        events.append(CollisionEvent(recoilAtoms,recoilEnergies,recoilXs,recoilYs,recoilZs,recoilVacancies,recoilReplacements))
-      
+    elif "For Ion" in line:      
+      ionNum+=1
       lookingForRecoils=0
-
-      recoilAtoms=[]
-      recoilEnergies=[]
-      recoilXs=[]
-      recoilYs=[]
-      recoilZs=[]
-      recoilVacancies=[]
-      recoilReplacements=[]
 
     elif "Recoil Atom" in line:
       lookingForRecoils=1 
@@ -202,6 +179,7 @@ def parseCollisionC(filename):
       lineParts = line.strip().split()      # Split on whitespace into clean fields
       if lookingForRecoils==1:
         if int(lineParts[6])>0:
+          ionNums.append(ionNum)
           recoilAtoms.append(int(lineParts[1]))
           recoilEnergies.append(float(lineParts[2])/1.e-6) #MeV
           recoilXs.append(float(lineParts[3])*0.1 - target_start_offset*0.1)
@@ -211,6 +189,16 @@ def parseCollisionC(filename):
           recoilReplacements.append(int(lineParts[7]))
     else:
       continue
+  
+  events = {
+      "historyNum": np.array(ionNums, dtype=np.uint16),
+      "secondaryAtom": np.array(recoilAtoms, dtype=np.uint8),
+      "energy": np.array(recoilEnergies, dtype=np.float32),
+      "x": np.array(recoilXs, dtype=np.float32),
+      "y": np.array(recoilYs, dtype=np.float32),
+      "z": np.array(recoilZs, dtype=np.float32),
+      "nVacancies": np.array(recoilVacancies, dtype=np.uint16),
+  }
   return events
 
 # ========== MAIN ==========
@@ -226,6 +214,5 @@ for energy in energies:
   #Make output file
   events = parseCollisionC(srimFolder+"SRIM Outputs/COLLISON.txt")
 
-  outFilename = outputFolder + "{1:06.3f}_keV.pkl".format(ionName,energy/1000.)
-  with lzma.open(outFilename + ".xz", "wb") as f:
-      pickle.dump(events, f, protocol=pickle.HIGHEST_PROTOCOL)
+  outFilename = outputFolder + "{01:06.3f}_keV.npz".format(energy/1000.)
+  np.savez_compressed(outFilename, **events)
