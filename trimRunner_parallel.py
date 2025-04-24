@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
 
 # USER CONFIGURATION
 ionName = "7Li"
@@ -165,7 +166,7 @@ def run_single_energy(energy):
   return f"{energy} keV done"
 
 if __name__ == "__main__":
-    with ProcessPoolExecutor(max_workers=cpu_count()-1) as pool:
+    with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()-1) as pool:
         results = list(pool.map(run_single_energy, energies))
     for r in results:
         print(r)
