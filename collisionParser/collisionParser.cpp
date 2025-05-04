@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <tuple>
 #include <map>
+#include <chrono>
+
 #include "TTree.h"
 #include "TTreeIndex.h"
 #include "TFile.h"
@@ -64,19 +66,16 @@ int main(int argc, char* argv[]) {
   //Make the output file//
   //--------------------//
   TFile* outputFile = new TFile(outputFilename.c_str(), "RECREATE");
+  //outputFile->SetCompressionAlgorithm(ROOT::RCompressionSetting::EAlgorithm::kLZ4);
+  //outputFile->SetCompressionLevel(4);  
   TTree* unsortedTree = new TTree("unsortedTree", "Clustered recoil tracks");
   unsortedTree->SetDirectory(0);
-
+  
   float energy = 0.0;
   vector<float> xs;
   vector<float> ys;
   vector<float> zs;
   vector<int> nVacs;
-
-  xs.reserve(200000);
-  ys.reserve(200000);
-  zs.reserve(200000);
-  nVacs.reserve(200000);
 
   unsortedTree->Branch("energy_keV", &energy, "energy_keV/F");
   unsortedTree->Branch("xs_nm", &xs);
@@ -118,6 +117,7 @@ int main(int argc, char* argv[]) {
   //---------------------------//
   //Load through collision file//
   //---------------------------//
+  auto t_start = std::chrono::high_resolution_clock::now();
   while (getline(infile, line)) {
 
     //Clean weird ascii chars
@@ -142,10 +142,6 @@ int main(int argc, char* argv[]) {
     //elif "Prime Recoil" in line, enable tracking. If "Summary" in line, disable tracking and process the event
     else if (line.find("Prime Recoil") != string::npos) {
       lookingForRecoils = true;
-      tmpRecoilEnergies.clear();
-      tmpRecoil_xLocs.clear();
-      tmpRecoil_yLocs.clear();
-      tmpRecoil_zLocs.clear();
     }
     else if (line.find("Summary") != string::npos) {
 
@@ -155,19 +151,37 @@ int main(int argc, char* argv[]) {
       data.recoil_xLocs.push_back(tmpRecoil_xLocs);
       data.recoil_yLocs.push_back(tmpRecoil_yLocs);
       data.recoil_zLocs.push_back(tmpRecoil_zLocs);
+
+      //Clean vectors of the previous cascade data
+      tmpRecoilEnergies.clear();
+      tmpRecoil_xLocs.clear();
+      tmpRecoil_yLocs.clear();
+      tmpRecoil_zLocs.clear();
+      
     }
     else if (line.find("For Ion") != string::npos) {
       if (throwNum%100==0) {
-        cout<<"On throw # "<<throwNum<<endl;
+        auto t_end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = t_end - t_start;
+
+        cout << "Processed " << throwNum << " throws in "
+            << elapsed.count() << " seconds." << endl;
+        t_start = std::chrono::high_resolution_clock::now();
+
+        if (throwNum>500) {
+          break;
+        }
       }
+      
       throwNum++; 
       ProcessThrow(data,unsortedTree,energy,xs,ys,zs,nVacs,startOffset_nm,clusteringDistance_nm,binSize_keV,maxEntriesPerBin,maxEnergy_keV);
 
-      //Clear cascade data
+      //Clear primary info
       data.primaryEnergies.clear();
       data.primary_xLocs.clear();
       data.primary_yLocs.clear();
       data.primary_zLocs.clear();
+      //Clear recoil ingo
       data.recoilEnergies.clear();
       data.recoil_xLocs.clear();
       data.recoil_yLocs.clear();
@@ -215,6 +229,8 @@ int main(int argc, char* argv[]) {
 
   //Write root file
   trimTree->Write("trimTree",TObject::kOverwrite);
+  unsortedTree->SetDirectory(0);
+  delete unsortedTree;
   outputFile->Close();
 }
 
