@@ -9,6 +9,7 @@
 #include "TTree.h"
 #include "TTreeIndex.h"
 #include "TFile.h"
+//#define WRITE_CSV
 
 using namespace std;
 
@@ -40,7 +41,7 @@ int main(int argc, char* argv[]) {
   std::map<int, int> energyBinCounter;
   
   //
-  float clusteringDistance_nm = 4.026*0.1*1.5;  //4.026 Angstroms is the lattice distance, but we're using 1.5 lattice spacings
+  float clusteringDistance_nm = 4.026*0.1*0.5;  //4.026 Angstroms is the lattice distance, but we're using 1.5 lattice spacings
   vector<string> atomsToTrack = {"19"};         //Don't care about Li vacancies, not optical
   //--------------------//
   //Parse cmd line input//
@@ -186,7 +187,8 @@ int main(int argc, char* argv[]) {
   cout<<"sorted!"<<endl;
 
   //Write CSV
-  cout<<"Writing CSV...";
+  #ifdef WRITE_CSV
+  cout<<"Writing CSV..."<<endl;
   ofstream csvOut("trimTracks.csv");
   csvOut << "energy_keV,xs_nm,ys_nm,zs_nm,nVacs\n";
 
@@ -197,7 +199,8 @@ int main(int argc, char* argv[]) {
       }
   }
   csvOut.close();
-  cout<<"written!"<<endl;
+  cout<<"Done!"<<endl;
+  #endif
 
   //Write root file
   trimTree->Write("trimTree",TObject::kOverwrite);
