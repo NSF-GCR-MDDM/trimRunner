@@ -3,16 +3,27 @@ import numpy as np
 import pickle
 import lzma
 
-ionName = "7Li"
+#Incident ion
 Z = 3
-mass = 7.01600343 #amu
-energies = range(25,2050,50) #keV
-nps = 500
+ionName = "6Li"
+massDict = {
+  "7Li": 7.01600343,
+  "6Li": 6.01512289,
+  "19F": 18.99840316,
+  "4He": 4.002603254,
+  "3H": 3.016049281,
+  "2H": 2.0135532,
+  "1H": 1.00727646,
+}
+mass = massDict[ionName]
+energies = [5200]
+nps = 50000
 
+#Target description
 target_name = "LiF"
 target_nElements = 2
 target_nLayers = 1
-target_start_offset = 10 #Angstroms, we offset the start point to save backscattered ions
+target_start_offset = 0 #Angstroms, we offset the start point to save backscattered ions
 
 #Note if you want the same element in different layers, you can optionally include it twice to track
 #recoils separately and set separate displacement energies
@@ -20,11 +31,11 @@ target_element_names = ["Li","F"]
 target_element_Zs = [3,9]
 target_element_masses = [6.941,18.998]
 target_element_TDEs = [25,25] #eV, displacement energy for each element.
-target_element_LBEs = [5., 6.] #eV, lattice binding energies
-target_element_SBEs = [4.0, 4.5] #eV, surface binding energies
+target_element_LBEs = [3., 3.] #eV, lattice binding energies
+target_element_SBEs = [1.67, 2] #eV, surface binding energies
 
 layer_names = ["LiF"]
-layer_depths = [20000000] #Angstroms. (2mm) - we want to be sure ions won't range out
+layer_depths = [200000] #Angstroms. (2mm) - we want to be sure ions won't range out
 target_depth = sum(layer_depths)
 layer_densities  = [2.635] # g/cm^3]
 #stoichs correspond to target_elements
@@ -142,65 +153,6 @@ def writeLines(lines,srimFolder):
       trimFile.write(line)
   trimFile.close()
 
-#Set up to parse collision files of type C (Full recoil cascades)
-def parseCollisionC(filename):
-  startLine=10
-  inpFile = open(filename,"r")
-
-  lookingForRecoils=0
-
-  ionNum = 0
-  ionNums=[]
-  recoilAtoms=[]
-  recoilEnergies=[]
-  recoilXs=[]
-  recoilYs=[]
-  recoilZs=[]
-  recoilVacancies=[]
-  recoilReplacements=[]
-
-  for iline,line in enumerate(inpFile):
-    
-    #Skip header
-    if iline<28:
-      continue
-    elif "For Ion" in line:      
-      ionNum+=1
-      lookingForRecoils=0
-
-    elif "Recoil Atom" in line:
-      lookingForRecoils=1 
-    elif "===" in line:
-      lookingForRecoils=0
-    elif lookingForRecoils==1:
-      line=line.strip("\n")
-      line = line.replace('³', ' ')         # Replace weird delimiters with space
-      line = line.replace('Û', '')          # Remove the garbage Û characters
-      lineParts = line.strip().split()      # Split on whitespace into clean fields
-      if lookingForRecoils==1:
-        if int(lineParts[6])>0:
-          ionNums.append(ionNum)
-          recoilAtoms.append(int(lineParts[1]))
-          recoilEnergies.append(float(lineParts[2])/1.e-6) #MeV
-          recoilXs.append(float(lineParts[3])*0.1 - target_start_offset*0.1)
-          recoilYs.append(float(lineParts[4])*0.1 - 0)
-          recoilZs.append(float(lineParts[5])*0.1 - 0)
-          recoilVacancies.append(int(lineParts[6]))
-          recoilReplacements.append(int(lineParts[7]))
-    else:
-      continue
-  
-  events = {
-      "historyNum": np.array(ionNums, dtype=np.uint16),
-      "secondaryAtom": np.array(recoilAtoms, dtype=np.uint8),
-      "energy": np.array(recoilEnergies, dtype=np.float32),
-      "x": np.array(recoilXs, dtype=np.float32),
-      "y": np.array(recoilYs, dtype=np.float32),
-      "z": np.array(recoilZs, dtype=np.float32),
-      "nVacancies": np.array(recoilVacancies, dtype=np.uint16),
-  }
-  return events
-
 # ========== MAIN ==========
 for energy in energies:
   #Go to SRIM folder, make TRIMIN.txt
@@ -211,8 +163,5 @@ for energy in energies:
   #Run SRIM
   os.system("TRIM.exe")  # This runs SRIM in batch mode 
 
-  #Make output file
-  events = parseCollisionC(srimFolder+"SRIM Outputs/COLLISON.txt")
-
-  outFilename = outputFolder + "{01:06.3f}_keV.npz".format(energy/1000.)
-  np.savez_compressed(outFilename, **events)
+  #Mv output
+  os.rename("C:\\Users\\Sam\Desktop\\SRIM_exe\\SRIM Outputs\\COLLISON.txt", "C:\\Users\\Sam\\Desktop\\SRIM_exe\\SRIM Outputs\\{0}_{1}.txt".format(targetName,ionName))
