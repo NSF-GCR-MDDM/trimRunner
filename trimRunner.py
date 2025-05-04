@@ -4,8 +4,8 @@ import pickle
 import lzma
 
 #Incident ion
-Z = 3
-ionName = "6Li"
+Z = 9
+ionName = "19F"
 massDict = {
   "7Li": 7.01600343,
   "6Li": 6.01512289,
@@ -164,4 +164,4 @@ for energy in energies:
   os.system("TRIM.exe")  # This runs SRIM in batch mode 
 
   #Mv output
-  os.rename("C:\\Users\\Sam\Desktop\\SRIM_exe\\SRIM Outputs\\COLLISON.txt", "C:\\Users\\Sam\\Desktop\\SRIM_exe\\SRIM Outputs\\{0}_{1}.txt".format(targetName,ionName))
+  os.rename("C:\\Users\\Sam\Desktop\\SRIM_exe\\SRIM Outputs\\COLLISON.txt", "C:\\Users\\Sam\\Desktop\\SRIM_exe\\SRIM Outputs\\{0}_{1}.txt".format(target_name,ionName))
