@@ -25,10 +25,12 @@ struct CascadeData {
 };
 
 //Functions
-void ProcessThrow(CascadeData& data, TTree* tree, float& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>& nVacs, float startOffset_nm, float clusteringDistance_nm, map<int, int>& energyBinCounter, float binSize_keV, int maxEntriesPerBin, float maxEnergy_keV);
+void ProcessThrow(CascadeData& data, TTree* tree, float& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>& nVacs, float startOffset_nm, float clusteringDistance_nm, float binSize_keV, int maxEntriesPerBin, float maxEnergy_keV);
 
 //Takes dx,dy,dz unit vector and computes the matrix to rotate arbitrary points in that space to 1,0,0
 array<array<float, 3>, 3> ComputeRotationMatrix(float dx, float dy, float dz);
+
+std::map<int, int> energyBinCounter;
 
 int main(int argc, char* argv[]) {
 
@@ -36,9 +38,8 @@ int main(int argc, char* argv[]) {
   float startOffset_nm = 1.0;  //From SRIM input, 10 A = 1nm, we start partway in to allow backscattered particles to show
   float maxEnergy_keV = 5000;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
 
-  int maxEntriesPerBin = 2e5;  //Avoid filling up too much data at lower energys
+  int maxEntriesPerBin = 5e4;  //Avoid filling up too much data at lower energys
   float binSize_keV = 5;       //Bin size
-  std::map<int, int> energyBinCounter;
   
   //
   float clusteringDistance_nm = 4.026*0.1*0.5;  //4.026 Angstroms is the lattice distance, but we're using 1.5 lattice spacings
@@ -46,18 +47,23 @@ int main(int argc, char* argv[]) {
   //--------------------//
   //Parse cmd line input//
   //--------------------//
-  if (argc != 2) {
-      cout << "Usage: " << argv[0] << " <COLLISON.txt>" << endl;
+  if ((argc != 2)&&(argc != 3)) {
+      cout << "Usage: " << argv[0] << " <COLLISON.txt> <optiinal output filename>" << endl;
       return 1;
   }
-
   string filename = argv[1];
+
+  string outputFilename = "trimTracks.root";
+  if (argc == 3) {
+    outputFilename = argv[2];
+  }
+
 
   cout << "Input file: " << filename << endl;
   //--------------------//
   //Make the output file//
   //--------------------//
-  TFile* outputFile = new TFile("trimTracks.root", "RECREATE");
+  TFile* outputFile = new TFile(outputFilename.c_str(), "RECREATE");
   TTree* unsortedTree = new TTree("unsortedTree", "Clustered recoil tracks");
   unsortedTree->SetDirectory(0);
 
@@ -155,7 +161,7 @@ int main(int argc, char* argv[]) {
         cout<<"On throw # "<<throwNum<<endl;
       }
       throwNum++; 
-      ProcessThrow(data,unsortedTree,energy,xs,ys,zs,nVacs,startOffset_nm,clusteringDistance_nm,energyBinCounter,binSize_keV,maxEntriesPerBin,maxEnergy_keV);
+      ProcessThrow(data,unsortedTree,energy,xs,ys,zs,nVacs,startOffset_nm,clusteringDistance_nm,binSize_keV,maxEntriesPerBin,maxEnergy_keV);
 
       //Clear cascade data
       data.primaryEnergies.clear();
@@ -213,7 +219,7 @@ int main(int argc, char* argv[]) {
 }
 
 
-void ProcessThrow(CascadeData& data, TTree* tree, float& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>&nVacs, float startOffset_nm, float clusteringDistance_nm,  map<int, int>& energyBinCounter, float binSize_keV, int maxEntriesPerBin,float maxEnergy_keV) {
+void ProcessThrow(CascadeData& data, TTree* tree, float& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>&nVacs, float startOffset_nm, float clusteringDistance_nm, float binSize_keV, int maxEntriesPerBin,float maxEnergy_keV) {
   float startX = startOffset_nm;
   float startY = 0;
   float startZ = 0;
