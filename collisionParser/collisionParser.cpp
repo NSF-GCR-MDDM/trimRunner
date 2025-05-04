@@ -25,7 +25,7 @@ struct CascadeData {
 };
 
 //Functions
-void ProcessThrow(CascadeData& data, TTree* tree, float& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>& nVacs, float startOffset_nm, float clusteringDistance_nm, map<int, int>energyBinCounter, float binSize_keV, int maxEntriesPerBin, float maxEnergy_keV);
+void ProcessThrow(CascadeData& data, TTree* tree, float& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>& nVacs, float startOffset_nm, float clusteringDistance_nm, map<int, int>& energyBinCounter, float binSize_keV, int maxEntriesPerBin, float maxEnergy_keV);
 
 //Takes dx,dy,dz unit vector and computes the matrix to rotate arbitrary points in that space to 1,0,0
 array<array<float, 3>, 3> ComputeRotationMatrix(float dx, float dy, float dz);
@@ -67,12 +67,17 @@ int main(int argc, char* argv[]) {
   vector<float> zs;
   vector<int> nVacs;
 
+  xs.reserve(200000);
+  ys.reserve(200000);
+  zs.reserve(200000);
+  nVacs.reserve(200000);
+
   unsortedTree->Branch("energy_keV", &energy, "energy_keV/F");
   unsortedTree->Branch("xs_nm", &xs);
   unsortedTree->Branch("ys_nm", &ys);
   unsortedTree->Branch("zs_nm", &zs);
   unsortedTree->Branch("nVacs", &nVacs);
-
+  
   TTree* trimTree = (TTree*)unsortedTree->CloneTree(0);
   trimTree->SetName("trimTree" );
   trimTree->SetDirectory(outputFile);
@@ -208,7 +213,7 @@ int main(int argc, char* argv[]) {
 }
 
 
-void ProcessThrow(CascadeData& data, TTree* tree, float& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>&nVacs, float startOffset_nm, float clusteringDistance_nm,  map<int, int>energyBinCounter, float binSize_keV, int maxEntriesPerBin,float maxEnergy_keV) {
+void ProcessThrow(CascadeData& data, TTree* tree, float& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>&nVacs, float startOffset_nm, float clusteringDistance_nm,  map<int, int>& energyBinCounter, float binSize_keV, int maxEntriesPerBin,float maxEnergy_keV) {
   float startX = startOffset_nm;
   float startY = 0;
   float startZ = 0;
