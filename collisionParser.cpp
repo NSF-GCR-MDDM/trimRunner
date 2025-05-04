@@ -48,7 +48,7 @@ int main(int argc, char* argv[]) {
   float startOffset_nm = 1.0;  //From SRIM input, 10 A = 1nm, we start partway in to allow backscattered particles to show
   float maxEnergy_keV = 2000;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
 
-  int maxEntriesPerBin = 5e4;  //Avoid filling up too much data at lower energys
+  int maxEntriesPerBin = 25e3;  //Avoid filling up too much data at lower energys
   float binSize_keV = 5;       //Bin size
   
   //
