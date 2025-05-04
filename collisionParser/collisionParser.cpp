@@ -184,6 +184,22 @@ int main(int argc, char* argv[]) {
     trimTree->Fill();      
   }
   cout<<"sorted!"<<endl;
+
+  //Write CSV
+  cout<<"Writing CSV...";
+  ofstream csvOut("trimTracks.csv");
+  csvOut << "energy_keV,xs_nm,ys_nm,zs_nm,nVacs\n";
+
+  for (Long64_t i = 0; i < trimTree->GetEntries(); i++) {
+      trimTree->GetEntry(i);
+      for (size_t j = 0; j < xs.size(); j++) {
+          csvOut<<energy<< ","<<xs[j]<<","<<ys[j]<< ","<<zs[j]<<","<<(int)nVacs[j]<<"\n";
+      }
+  }
+  csvOut.close();
+  cout<<"written!"<<endl;
+
+  //Write root file
   trimTree->Write("trimTree",TObject::kOverwrite);
   outputFile->Close();
 }
