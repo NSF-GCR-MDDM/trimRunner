@@ -4,8 +4,8 @@ import pickle
 import lzma
 
 #Incident ion
-Z = 9
-ionName = "19F"
+Z = 3
+ionName = "6Li"
 massDict = {
   "7Li": 7.01600343,
   "6Li": 6.01512289,
@@ -17,7 +17,7 @@ massDict = {
 }
 mass = massDict[ionName]
 energies = [5200]
-nps = 50000
+nps = 500
 
 #Target description
 target_name = "LiF"
@@ -35,7 +35,7 @@ target_element_LBEs = [3., 3.] #eV, lattice binding energies
 target_element_SBEs = [1.67, 2] #eV, surface binding energies
 
 layer_names = ["LiF"]
-layer_depths = [200000] #Angstroms. (2mm) - we want to be sure ions won't range out
+layer_depths = [2000000] #Angstroms. (2mm) - we want to be sure ions won't range out
 target_depth = sum(layer_depths)
 layer_densities  = [2.635] # g/cm^3]
 #stoichs correspond to target_elements
@@ -164,4 +164,4 @@ for energy in energies:
   os.system("TRIM.exe")  # This runs SRIM in batch mode 
 
   #Mv output
-  os.rename("C:\\Users\\Sam\Desktop\\SRIM_exe\\SRIM Outputs\\COLLISON.txt", "C:\\Users\\Sam\\Desktop\\SRIM_exe\\SRIM Outputs\\{0}_{1}.txt".format(target_name,ionName))
+  os.rename("C:\\Users\\Sam\\Desktop\\SRIM_exe\\SRIM Outputs\\COLLISON.txt", "C:\\Users\\Sam\\Desktop\\SRIM_exe\\SRIM Outputs\\{0}_{1}.txt".format(target_name,ionName))
