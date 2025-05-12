@@ -37,13 +37,13 @@ int main(int argc, char* argv[]) {
   bool saveMemory=false;
 
   //Srim settings
-  int16_t maxEnergy_keV = 2000;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
+  int16_t maxEnergy_keV = 2000;  //We start our trim runs at 5.2 MeV. Allow at least 100 keV to allow for "burn in"
 
-  int maxEntriesPerBin = 2e9;  //Avoid filling up too much data at lower energys
-  int16_t binSize_keV = 5;       //Bin size
+  int maxEntriesPerBin = 2e3;  //Avoid filling tree up with lots of data at low energies. 
+  int16_t binSize_keV = 5;     //Bin size
   
   //
-  float clusteringDistance_nm = 4.026*0.1*0.5;  //4.026 Angstroms is the lattice distance, but we're using 1.5 lattice spacings
+  float clusteringDistance_nm = (4.026*0.1)*1.5;  //4.026 Angstroms is the lattice distance, but we're using 1.5 lattice spacings
   vector<string> atomsToTrack = {"19"};         //Don't care about Li vacancies, not optical
   //--------------------//
   //Parse cmd line input//
