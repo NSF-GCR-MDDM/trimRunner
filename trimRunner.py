@@ -4,20 +4,34 @@ import pickle
 import lzma
 
 #Incident ion
-Z = 3
-ionName = "6Li"
+ionName = "4He"
+energies = [2150]
+nps = 50000
+
+#Mass evaluation from https://www-nds.iaea.org/amdc/ame2020/mass_1.mas20.txt
+#subtracting off # of protons * 0.000548579905 amu to remove electron contribution
 massDict = {
-  "7Li": 7.01600343,
-  "6Li": 6.01512289,
-  "19F": 18.99840316,
-  "4He": 4.002603254,
-  "3H": 3.016049281,
-  "2H": 2.0135532,
-  "1H": 1.00727646,
+  "19F": 18.993465942925,
+  "7Li": 7.014357694545,
+  "6Li": 6.013477147705,
+  "4He": 4.00150609432,
+  "3He": 3.01493216216,
+  "3H": 3.015500701415,
+  "2H": 2.013553197939,
+  "1H": 1.007276451993
 }
+zDict = {
+  "19F": 9,
+  "7Li": 3,
+  "6Li": 3,
+  "4He": 2,
+  "3He": 2,
+  "3H": 1,
+  "2H": 1,
+  "1H": 1,
+}
+Z = zDict[ionName]
 mass = massDict[ionName]
-energies = [5200]
-nps = 500
 
 #Target description
 target_name = "LiF"
@@ -86,7 +100,7 @@ def makeTrimInputString(energy):
   for i,elemName in enumerate(target_element_names):
      targetElementLine = "Atom {0} = {1} =".format(i,elemName)
      nSpaces = 15-len(targetElementLine)
-     targetElementLine += " "*nSpaces + "{0}  {1:.3f}".format(target_element_masses[i],target_element_Zs[i])
+     targetElementLine += " "*nSpaces + "{0}  {1:.3f}".format(target_element_Zs[i],target_element_masses[i])
      lines.append(targetElementLine)
 
   layerMetaHeaderLine = "Layer   Layer Name /               Width Density"
