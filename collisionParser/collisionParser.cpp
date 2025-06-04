@@ -23,10 +23,11 @@ struct CascadeData {
   vector<vector<float>> recoil_xLocs;
   vector<vector<float>> recoil_yLocs;
   vector<vector<float>> recoil_zLocs;
+  vector<vector<float>> recoil_energies;
 };
 
 //Functions
-void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>& nVacs, float clusteringDistance_nm, int16_t binSize_keV, int maxEntriesPerBin, int16_t maxEnergy_keV);
+void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>& nVacs, vector<float>&dEs, float clusteringDistance_nm, int16_t binSize_keV, int maxEntriesPerBin, int16_t maxEnergy_keV, int16_t minEnergy_keV);
 
 //Takes dx,dy,dz unit vector and computes the matrix to rotate arbitrary points in that space to 1,0,0
 array<array<float, 3>, 3> ComputeRotationMatrix(float dx, float dy, float dz);
@@ -37,13 +38,14 @@ int main(int argc, char* argv[]) {
   bool saveMemory=false;
 
   //Srim settings
-  int16_t maxEnergy_keV = 2000;  //We start our trim runs at 5.2 MeV. Allow at least 100 keV to allow for "burn in"
+  int16_t maxEnergy_keV = 2055;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
+  int16_t minEnergy_keV = 2044;
 
-  int maxEntriesPerBin = 2e3;  //Avoid filling tree up with lots of data at low energies. 
-  int16_t binSize_keV = 5;     //Bin size
+  int maxEntriesPerBin = 2e5;  //Avoid filling up too much data at lower energys
+  int16_t binSize_keV = 5;       //Bin size
   
   //
-  float clusteringDistance_nm = (4.026*0.1)*1.5;  //4.026 Angstroms is the lattice distance, but we're using 1.5 lattice spacings
+  float clusteringDistance_nm = 4.026*0.1*1.5;  //4.026 Angstroms is the lattice distance, but we're using 1.5 lattice spacings
   vector<string> atomsToTrack = {"19"};         //Don't care about Li vacancies, not optical
   //--------------------//
   //Parse cmd line input//
@@ -75,12 +77,14 @@ int main(int argc, char* argv[]) {
   vector<float> ys;
   vector<float> zs;
   vector<int> nVacs;
+  vector<float> dEs;
 
   unsortedTree->Branch("energy_keV", &energy, "energy_keV/S");
   unsortedTree->Branch("xs_nm", &xs);
   unsortedTree->Branch("ys_nm", &ys);
   unsortedTree->Branch("zs_nm", &zs);
   unsortedTree->Branch("nVacs", &nVacs);
+  unsortedTree->Branch("dEs", &dEs);
   
   TTree* trimTree = (TTree*)unsortedTree->CloneTree(0);
   trimTree->SetName("trimTree" );
@@ -106,11 +110,12 @@ int main(int argc, char* argv[]) {
   vector<float> tmpRecoil_xLocs;
   vector<float> tmpRecoil_yLocs;
   vector<float> tmpRecoil_zLocs;
+  vector<float> tmpRecoil_energies;
 
   int throwNum = 0; //Only for tracking how far in the processing we are
   bool lookingForRecoils = false;
   string dummy;
-  string energyStr, xStr, yStr, zStr, atomStr, vacancyStr;
+  string energyStr, xStr, yStr, zStr, atomStr, vacancyStr, recoilEnergyStr;
 
   //---------------------------//
   //Load through collision file//
@@ -150,11 +155,13 @@ int main(int argc, char* argv[]) {
       data.recoil_xLocs.push_back(tmpRecoil_xLocs);
       data.recoil_yLocs.push_back(tmpRecoil_yLocs);
       data.recoil_zLocs.push_back(tmpRecoil_zLocs);
+      data.recoil_energies.push_back(tmpRecoil_energies);
 
       //Clean vectors of the previous cascade data
       tmpRecoil_xLocs.clear();
       tmpRecoil_yLocs.clear();
       tmpRecoil_zLocs.clear();
+      tmpRecoil_energies.clear();
       
     }
     else if (line.find("For Ion") != string::npos) {
@@ -168,7 +175,7 @@ int main(int argc, char* argv[]) {
       }
       
       throwNum++; 
-      ProcessThrow(data,unsortedTree,energy,xs,ys,zs,nVacs,clusteringDistance_nm,binSize_keV,maxEntriesPerBin,maxEnergy_keV);
+      ProcessThrow(data,unsortedTree,energy,xs,ys,zs,nVacs,dEs,clusteringDistance_nm,binSize_keV,maxEntriesPerBin,maxEnergy_keV,minEnergy_keV);
 
       //Clear primary info
       data.primaryEnergies.clear();
@@ -179,6 +186,7 @@ int main(int argc, char* argv[]) {
       data.recoil_xLocs.clear();
       data.recoil_yLocs.clear();
       data.recoil_zLocs.clear();
+      data.recoil_energies.clear();
     }
 
     //If enable recoil tracking, store the energy, xloc, yloc, zloc if nVacanies >0 and atom is in atomsToTrack
@@ -189,17 +197,22 @@ int main(int argc, char* argv[]) {
         tmpRecoil_xLocs.push_back(stof(xStr)*0.1);
         tmpRecoil_yLocs.push_back(stof(yStr)*0.1);
         tmpRecoil_zLocs.push_back(stof(zStr)*0.1);
+        tmpRecoil_energies.push_back(stof(energyStr));
       }
     }
   }
 
   //Sort
-  cout<<"Sorting tree...";
-  unsortedTree->BuildIndex("energy_keV");
-  TTreeIndex* treeIndex = (TTreeIndex*)unsortedTree->GetTreeIndex();
-  for( size_t i = 0; i < treeIndex->GetN(); i++ ) {
-    unsortedTree->GetEntry(treeIndex->GetIndex()[i]);
-    trimTree->Fill();      
+  //cout<<"Sorting tree...";
+  //unsortedTree->BuildIndex("energy_keV");
+  //TTreeIndex* treeIndex = (TTreeIndex*)unsortedTree->GetTreeIndex();
+  //for( size_t i = 0; i < treeIndex->GetN(); i++ ) {
+  //  unsortedTree->GetEntry(treeIndex->GetIndex()[i]);
+  //  trimTree->Fill();      
+  //}
+  for (size_t i=0; i < unsortedTree->GetEntries(); i++) {
+    unsortedTree->GetEntry(i);
+    trimTree->Fill();
   }
   cout<<"sorted!"<<endl;
 
@@ -221,15 +234,15 @@ int main(int argc, char* argv[]) {
 
   //Write root file
   trimTree->Write("trimTree",TObject::kOverwrite);
-  if (saveMemory) {
-    unsortedTree->SetDirectory(0);
-    delete unsortedTree;
-  }
+  //if (saveMemory) {
+  //  unsortedTree->SetDirectory(0);
+  //  delete unsortedTree;
+  //}
   outputFile->Close();
 }
 
 
-void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>&nVacs, float clusteringDistance_nm, int16_t binSize_keV, int maxEntriesPerBin,int16_t maxEnergy_keV) {
+void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>&nVacs, vector<float>& dEs, float clusteringDistance_nm, int16_t binSize_keV, int maxEntriesPerBin,int16_t maxEnergy_keV,int16_t minEnergy_keV) {
   float startX = 0;
   float startY = 0;
   float startZ = 0;
@@ -242,8 +255,8 @@ void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>
     //Shouldn't be empty but we'll check
     if (data.recoil_xLocs[i].empty()) continue;
 
-    //If energy is below max and above 0, process
-    if ((data.primaryEnergies[i]<=maxEnergy_keV)||(data.primaryEnergies[i]>0)) {
+    //If energy is below max and above min, process
+    if ((data.primaryEnergies[i]<=maxEnergy_keV)&&(data.primaryEnergies[i]>minEnergy_keV)) {
 
       //If we have too much data in the bin, skip
       int binIndex = static_cast<int>(data.primaryEnergies[i] / binSize_keV);
@@ -273,17 +286,19 @@ void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>
         vector<float> flatX;
         vector<float> flatY; 
         vector<float> flatZ;
+        vector<float> flatEnergies;
         for (size_t j = i; j < data.primaryEnergies.size(); j++ ) {
           for (size_t k = 0; k < data.recoil_xLocs[j].size(); k++) {
             //Flatten future data while applying the offset 
             flatX.push_back(data.recoil_xLocs[j][k]-offsetX);
             flatY.push_back(data.recoil_yLocs[j][k]-offsetY);
             flatZ.push_back(data.recoil_zLocs[j][k]-offsetZ);
+            flatEnergies.push_back(data.recoil_energies[j][k]);
           }
         }
 
         //Rotate & cluster
-        std::map<std::tuple<int, int, int>, int> clusters;    
+        std::map<std::tuple<int, int, int>, std::pair<int,float>> clusters;   
         for (size_t j=0; j < flatX.size(); j++ ) {
           //Rotate all subsequent recoils such that they correspond to the incident particle traveling in the (1,0,0 direction)
           float x = rotMat[0][0]*flatX[j] + rotMat[0][1]*flatY[j] + rotMat[0][2]*flatZ[j];
@@ -294,7 +309,9 @@ void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>
           int iy = round(y / clusteringDistance_nm);
           int iz = round(z / clusteringDistance_nm);
           auto key = make_tuple(ix, iy, iz);
-          clusters[key] += 1;
+
+          clusters[key].first += 1;              // nVacs
+          clusters[key].second += flatEnergies[j]; 
         }
 
         //5. Clear branch vectors
@@ -302,10 +319,11 @@ void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>
         ys.clear();
         zs.clear();
         nVacs.clear();
+        dEs.clear();
 
         //6. Fill
         energy = data.primaryEnergies[i];
-        for (const auto& [key, count] : clusters) {
+        for (const auto& [key, tup] : clusters) {
           auto [ix, iy, iz] = key;
       
           // Convert back to physical lattice site
@@ -316,7 +334,8 @@ void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>
           xs.push_back(x);
           ys.push_back(y);
           zs.push_back(z);
-          nVacs.push_back(count);
+          nVacs.push_back(tup.first);
+          dEs.push_back(tup.second);
         }
         tree->Fill();
         energyBinCounter[binIndex]++;
