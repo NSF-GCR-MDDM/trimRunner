@@ -37,16 +37,17 @@ std::map<int, int> energyBinCounter;
 int main(int argc, char* argv[]) {
   bool saveMemory=false;
 
-  //Srim settings
-  int16_t maxEnergy_keV = 2055;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
+  //Srim settings  
   int16_t minEnergy_keV = 2044;
+  int16_t maxEnergy_keV = 2055;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
+
 
   int maxEntriesPerBin = 2e5;  //Avoid filling up too much data at lower energys
   int16_t binSize_keV = 5;       //Bin size
   
   //
   float clusteringDistance_nm = 4.026*0.1*1.5;  //4.026 Angstroms is the lattice distance, but we're using 1.5 lattice spacings
-  vector<string> atomsToTrack = {"19"};         //Don't care about Li vacancies, not optical
+  vector<string> atomsToTrack = {"09"};         //Don't care about Li vacancies, not optical
   //--------------------//
   //Parse cmd line input//
   //--------------------//
@@ -84,7 +85,7 @@ int main(int argc, char* argv[]) {
   unsortedTree->Branch("ys_nm", &ys);
   unsortedTree->Branch("zs_nm", &zs);
   unsortedTree->Branch("nVacs", &nVacs);
-  unsortedTree->Branch("dEs", &dEs);
+  unsortedTree->Branch("dEs_keV", &dEs);
   
   TTree* trimTree = (TTree*)unsortedTree->CloneTree(0);
   trimTree->SetName("trimTree" );
@@ -122,7 +123,6 @@ int main(int argc, char* argv[]) {
   //---------------------------//
   auto t_start = std::chrono::high_resolution_clock::now();
   while (getline(infile, line)) {
-
     //Clean weird ascii chars
     for (char& c : line) {
       if (!isprint(static_cast<unsigned char>(c))) {
@@ -214,7 +214,7 @@ int main(int argc, char* argv[]) {
     unsortedTree->GetEntry(i);
     trimTree->Fill();
   }
-  cout<<"sorted!"<<endl;
+  //cout<<"sorted!"<<endl;
 
   //Write CSV
   #ifdef WRITE_CSV
@@ -251,7 +251,7 @@ void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>
   float prevY = startY;
   float prevZ = startZ;
 
-  for (size_t i = 0; i < data.primaryEnergies.size() - 1; i++) {
+  for (size_t i = 0; i < data.primaryEnergies.size(); i++) {
     //Shouldn't be empty but we'll check
     if (data.recoil_xLocs[i].empty()) continue;
 
