@@ -38,8 +38,8 @@ int main(int argc, char* argv[]) {
   bool saveMemory=false;
 
   //Srim settings  
-  int16_t minEnergy_keV = 2044;
-  int16_t maxEnergy_keV = 2055;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
+  int16_t minEnergy_keV = 2724;
+  int16_t maxEnergy_keV = 2735;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
 
 
   int maxEntriesPerBin = 2e5;  //Avoid filling up too much data at lower energys
@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
   unsortedTree->Branch("ys_nm", &ys);
   unsortedTree->Branch("zs_nm", &zs);
   unsortedTree->Branch("nVacs", &nVacs);
-  unsortedTree->Branch("dEs_keV", &dEs);
+  unsortedTree->Branch("dEs_eV", &dEs);
   
   TTree* trimTree = (TTree*)unsortedTree->CloneTree(0);
   trimTree->SetName("trimTree" );
