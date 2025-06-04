@@ -4,9 +4,9 @@ import pickle
 import lzma
 
 #Incident ion
-ionName = "4He"
-energies = [2150]
-nps = 50000
+ionName = "19F"
+energies = [6200]
+nps = 100000
 
 #Mass evaluation from https://www-nds.iaea.org/amdc/ame2020/mass_1.mas20.txt
 #subtracting off # of protons * 0.000548579905 amu to remove electron contribution
@@ -91,7 +91,7 @@ def makeTrimInputString(energy):
   lines.append(targetLine)
   
   plotHeaderLine = "PlotType (0-5); Plot Depths: Xmin, Xmax(Ang.) [=0 0 for Viewing Full Target]"
-  plotLine = "     0     {0}     {1}".format(target_start_offset,target_depth)
+  plotLine = "     5     {0}     {1}".format(target_start_offset,target_depth)
   lines.append(plotHeaderLine)
   lines.append(plotLine)
 
