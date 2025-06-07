@@ -1,403 +1,181 @@
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <string>
-#include <vector>
-#include <algorithm>
-#include <tuple>
-#include <map>
-#include <chrono>
+import os
+import numpy as np
+import pickle
 
-#include "TTree.h"
-#include "TTreeIndex.h"
-#include "TFile.h"
-//#define WRITE_CSV
+#Incident ion
+ionName = "1H"
+energies = [3200]
+nps = 300000
 
-using namespace std;
-
-struct CascadeData {
-  vector<int32_t> primaryEnergies;
-  vector<float> primary_xLocs;
-  vector<float> primary_yLocs;
-  vector<float> primary_zLocs;
-  vector<vector<float>> recoil_xLocs;
-  vector<vector<float>> recoil_yLocs;
-  vector<vector<float>> recoil_zLocs;
-  vector<vector<float>> recoil_energies;
-};
-
-//Functions
-void ProcessThrow(CascadeData& data, TTree* tree, int32_t& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>& nVacs, vector<float>&dEs, float clusteringDistance_nm, int32_t binSize_eV, int maxEntriesPerBin, int32_t maxEnergy_eV, int32_t minEnergy_eV);
-
-//Takes dx,dy,dz unit vector and computes the matrix to rotate arbitrary points in that space to 1,0,0
-array<array<float, 3>, 3> ComputeRotationMatrix(float dx, float dy, float dz);
-
-std::map<int, int> energyBinCounter;
-
-int main(int argc, char* argv[]) {
-  bool saveMemory=false;
-
-  //Srim settings  
-  int32_t minEnergy_eV = 0;
-  int32_t maxEnergy_eV = 5000e3;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
-
-
-  int maxEntriesPerBin = 5e2;  //Avoid filling up too much data at lower energys
-  int32_t binSize_eV = 1e3;       //Bin size
-  
-  //
-  float clusteringDistance_nm = 4.026*0.1*1.5;  //4.026 Angstroms is the lattice distance, but we're using 1.5 lattice spacings
-  vector<string> atomsToTrack = {"09"};         //Don't care about Li vacancies, not optical
-  //--------------------//
-  //Parse cmd line input//
-  //--------------------//
-  if ((argc != 2)&&(argc != 3)) {
-      cout << "Usage: " << argv[0] << " <COLLISON.txt> <optiinal output filename>" << endl;
-      return 1;
-  }
-  string filename = argv[1];
-
-  string outputFilename = "trimTracks.root";
-  if (argc == 3) {
-    outputFilename = argv[2];
-  }
-
-
-  cout << "Input file: " << filename << endl;
-  //--------------------//
-  //Make the output file//
-  //--------------------//
-  TFile* outputFile = new TFile(outputFilename.c_str(), "RECREATE");
-  TTree* unsortedTree = new TTree("unsortedTree", "Clustered recoil tracks");
-  if (!saveMemory) {
-    unsortedTree->SetDirectory(0);
-  }
-  
-  int32_t energy = 0;
-  vector<float> xs;
-  vector<float> ys;
-  vector<float> zs;
-  vector<int> nVacs;
-  vector<float> dEs;
-
-  unsortedTree->Branch("energy_eV", &energy, "energy_eV/i");
-  unsortedTree->Branch("xs_nm", &xs);
-  unsortedTree->Branch("ys_nm", &ys);
-  unsortedTree->Branch("zs_nm", &zs);
-  unsortedTree->Branch("nVacs", &nVacs);
-  unsortedTree->Branch("dEs_eV", &dEs);
-  
-  TTree* trimTree = (TTree*)unsortedTree->CloneTree(0);
-  trimTree->SetName("trimTree" );
-  trimTree->SetDirectory(outputFile);
-
-  //-------------//
-  //Open the file//
-  //-------------// 
-  ifstream infile(filename);
-  if (!infile.is_open()) {
-      cerr << "Error: could not open file " << filename << endl;
-      return 1;
-  }
-  
-  //--------------------------------//
-  //Load collision data into vectors//
-  //--------------------------------//
-  string line;
-  int lineCounter = 0;
-
-  // Data vectors
-  CascadeData data;
-  vector<float> tmpRecoil_xLocs;
-  vector<float> tmpRecoil_yLocs;
-  vector<float> tmpRecoil_zLocs;
-  vector<float> tmpRecoil_energies;
-
-  int throwNum = 0; //Only for tracking how far in the processing we are
-  bool lookingForRecoils = false;
-  string dummy;
-  string energyStr, xStr, yStr, zStr, atomStr, vacancyStr, recoilEnergyStr;
-
-  //---------------------------//
-  //Load through collision file//
-  //---------------------------//
-  auto t_start = std::chrono::high_resolution_clock::now();
-  while (getline(infile, line)) {
-    //Clean weird ascii chars
-    for (char& c : line) {
-      if (!isprint(static_cast<unsigned char>(c))) {
-          c = ' ';
-      }
-    }
-    istringstream iss(line); 
-
-    //If "==" or "--" in line, skip
-    if (line.find("===") != string::npos || line.find("--") != string::npos) continue;     
-
-    //elif "New Cascade" in line, then we need to store the energy and x,y,z positions
-    else if (line.find("New Cascade") != string::npos) {
-      iss >> dummy >> energyStr >> xStr >> yStr >> zStr;
-      float eFloat = std::stof(energyStr);
-      int32_t eRounded = static_cast<int32_t>(std::round(eFloat*1000.0f));
-      data.primaryEnergies.push_back(eRounded);
-      data.primary_xLocs.push_back(stof(xStr)*0.1);
-      data.primary_yLocs.push_back(stof(yStr)*0.1);
-      data.primary_zLocs.push_back(stof(zStr)*0.1);
-    }
-    //elif "Prime Recoil" in line, enable tracking. If "Summary" in line, disable tracking and process the event
-    else if (line.find("Prime Recoil") != string::npos) {
-      lookingForRecoils = true;
-    }
-    else if (line.find("Summary") != string::npos) {
-
-      lookingForRecoils = false;
-
-      data.recoil_xLocs.push_back(tmpRecoil_xLocs);
-      data.recoil_yLocs.push_back(tmpRecoil_yLocs);
-      data.recoil_zLocs.push_back(tmpRecoil_zLocs);
-      data.recoil_energies.push_back(tmpRecoil_energies);
-
-      //Clean vectors of the previous cascade data
-      tmpRecoil_xLocs.clear();
-      tmpRecoil_yLocs.clear();
-      tmpRecoil_zLocs.clear();
-      tmpRecoil_energies.clear();
-      
-    }
-    else if (line.find("For Ion") != string::npos) {
-      if (throwNum%100==0) {
-        auto t_end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> elapsed = t_end - t_start;
-
-        cout << "Processed " << throwNum << " throws in "
-            << elapsed.count() << " seconds." << endl;
-        t_start = std::chrono::high_resolution_clock::now();
-      }
-      
-      throwNum++; 
-      ProcessThrow(data,unsortedTree,energy,xs,ys,zs,nVacs,dEs,clusteringDistance_nm,binSize_eV,maxEntriesPerBin,maxEnergy_eV,minEnergy_eV);
-
-      //Clear primary info
-      data.primaryEnergies.clear();
-      data.primary_xLocs.clear();
-      data.primary_yLocs.clear();
-      data.primary_zLocs.clear();
-      //Clear recoil info
-      data.recoil_xLocs.clear();
-      data.recoil_yLocs.clear();
-      data.recoil_zLocs.clear();
-      data.recoil_energies.clear();
-    }
-
-    //If enable recoil tracking, store the energy, xloc, yloc, zloc if nVacanies >0 and atom is in atomsToTrack
-    if (lookingForRecoils) {
-      iss >> dummy >> atomStr >> energyStr >> xStr >> yStr >> zStr >> vacancyStr;
-      if ((vacancyStr=="1") && (find(atomsToTrack.begin(), atomsToTrack.end(), atomStr) != atomsToTrack.end())) {
-
-        tmpRecoil_xLocs.push_back(stof(xStr)*0.1);
-        tmpRecoil_yLocs.push_back(stof(yStr)*0.1);
-        tmpRecoil_zLocs.push_back(stof(zStr)*0.1);
-        tmpRecoil_energies.push_back(stof(energyStr));
-      }
-    }
-  }
-
-  //Sort
-  //cout<<"Sorting tree...";
-  //unsortedTree->BuildIndex("energy_keV");
-  //TTreeIndex* treeIndex = (TTreeIndex*)unsortedTree->GetTreeIndex();
-  //for( size_t i = 0; i < treeIndex->GetN(); i++ ) {
-  //  unsortedTree->GetEntry(treeIndex->GetIndex()[i]);
-  //  trimTree->Fill();      
-  //}
-  for (size_t i=0; i < unsortedTree->GetEntries(); i++) {
-    unsortedTree->GetEntry(i);
-    trimTree->Fill();
-  }
-  //cout<<"sorted!"<<endl;
-
-  //Write CSV
-  #ifdef WRITE_CSV
-  cout<<"Writing CSV..."<<endl;
-  ofstream csvOut("trimTracks.csv");
-  csvOut << "energy_eV,xs_nm,ys_nm,zs_nm,nVacs\n";
-
-  for (Long64_t i = 0; i < trimTree->GetEntries(); i++) {
-      trimTree->GetEntry(i);
-      for (size_t j = 0; j < xs.size(); j++) {
-          csvOut<<energy<< ","<<xs[j]<<","<<ys[j]<< ","<<zs[j]<<","<<(int)nVacs[j]<<"\n";
-      }
-  }
-  csvOut.close();
-  cout<<"Done!"<<endl;
-  #endif
-
-  //Write root file
-  trimTree->Write("trimTree",TObject::kOverwrite);
-  //if (saveMemory) {
-  //  unsortedTree->SetDirectory(0);
-  //  delete unsortedTree;
-  //}
-  outputFile->Close();
+#Mass evaluation from https://www-nds.iaea.org/amdc/ame2020/mass_1.mas20.txt
+#subtracting off # of protons * 0.000548579905 amu to remove electron contribution
+massDict = {
+  "19F": 18.993465942925,
+  "7Li": 7.014357694545,
+  "6Li": 6.013477147705,
+  "4He": 4.00150609432,
+  "3He": 3.01493216216,
+  "3H": 3.015500701415,
+  "2H": 2.013553197939,
+  "1H": 1.007276451993
 }
-
-
-void ProcessThrow(CascadeData& data, TTree* tree, int32_t& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>&nVacs, vector<float>& dEs, float clusteringDistance_nm, int32_t binSize_eV, int maxEntriesPerBin,int32_t maxEnergy_eV,int32_t minEnergy_eV) {
-  float startX = 0;
-  float startY = 0;
-  float startZ = 0;
-
-  float prevX = startX;
-  float prevY = startY;
-  float prevZ = startZ;
-
-  for (size_t i = 0; i < data.primaryEnergies.size(); i++) {
-    //Shouldn't be empty but we'll check
-    if (data.recoil_xLocs[i].empty()) continue;
-
-    //If energy is below max and above min, process
-    if ((data.primaryEnergies[i]<=maxEnergy_eV)&&(data.primaryEnergies[i]>minEnergy_eV)) {
-
-      //If we have too much data in the bin, skip
-      int binIndex = static_cast<int>(data.primaryEnergies[i] / binSize_eV);
-      if (energyBinCounter[binIndex] <= maxEntriesPerBin) {
-
-        //1. Get direction of primary
-        //Get direction primary took from previous 
-        float dx = data.primary_xLocs[i] - prevX;
-        float dy = data.primary_yLocs[i] - prevY;
-        float dz = data.primary_zLocs[i] - prevZ;
-        //unit normalize
-        float norm = sqrt(dx*dx + dy*dy + dz*dz);
-        if (norm == 0) continue;  //shouldn't happen
-        dx /= norm;
-        dy /= norm;
-        dz /= norm;
-
-        //2. Compute rotation matrix
-        array<array<float, 3>, 3> rotMat = ComputeRotationMatrix(dx,dy,dz);
-
-        //3. Calculate the offset to apply to all points
-        float offsetX = data.primary_xLocs[i] + startX;
-        float offsetY = data.primary_yLocs[i] + startY;
-        float offsetZ = data.primary_zLocs[i] + startZ;
-
-        //Flatten the data, apply offset
-        vector<float> flatX;
-        vector<float> flatY; 
-        vector<float> flatZ;
-        vector<float> flatEnergies;
-        for (size_t j = i; j < data.primaryEnergies.size(); j++ ) {
-          for (size_t k = 0; k < data.recoil_xLocs[j].size(); k++) {
-            //Flatten future data while applying the offset 
-            flatX.push_back(data.recoil_xLocs[j][k]-offsetX);
-            flatY.push_back(data.recoil_yLocs[j][k]-offsetY);
-            flatZ.push_back(data.recoil_zLocs[j][k]-offsetZ);
-            flatEnergies.push_back(data.recoil_energies[j][k]);
-          }
-        }
-
-        //Rotate & cluster
-        std::map<std::tuple<int, int, int>, std::pair<int,float>> clusters;   
-        for (size_t j=0; j < flatX.size(); j++ ) {
-          //Rotate all subsequent recoils such that they correspond to the incident particle traveling in the (1,0,0 direction)
-          float x = rotMat[0][0]*flatX[j] + rotMat[0][1]*flatY[j] + rotMat[0][2]*flatZ[j];
-          float y = rotMat[1][0]*flatX[j] + rotMat[1][1]*flatY[j] + rotMat[1][2]*flatZ[j];
-          float z = rotMat[2][0]*flatX[j] + rotMat[2][1]*flatY[j] + rotMat[2][2]*flatZ[j];
-        
-          int ix = round(x / clusteringDistance_nm);
-          int iy = round(y / clusteringDistance_nm);
-          int iz = round(z / clusteringDistance_nm);
-          auto key = make_tuple(ix, iy, iz);
-
-          clusters[key].first += 1;              // nVacs
-          clusters[key].second += flatEnergies[j]; 
-        }
-
-        //5. Clear branch vectors
-        xs.clear();
-        ys.clear();
-        zs.clear();
-        nVacs.clear();
-        dEs.clear();
-
-        //6. Fill
-        energy = data.primaryEnergies[i];
-        for (const auto& [key, tup] : clusters) {
-          auto [ix, iy, iz] = key;
-      
-          // Convert back to physical lattice site
-          float x = ix * clusteringDistance_nm;
-          float y = iy * clusteringDistance_nm;
-          float z = iz * clusteringDistance_nm;
-      
-          xs.push_back(x);
-          ys.push_back(y);
-          zs.push_back(z);
-          nVacs.push_back(tup.first);
-          dEs.push_back(tup.second);
-        }
-        tree->Fill();
-        energyBinCounter[binIndex]++;
-      }
-    }
-
-    //7. Update prevX, prevY, prevZ for the next iteration
-    prevX = data.primary_xLocs[i];
-    prevY = data.primary_yLocs[i];
-    prevZ = data.primary_zLocs[i];
-  }
+zDict = {
+  "19F": 9,
+  "7Li": 3,
+  "6Li": 3,
+  "4He": 2,
+  "3He": 2,
+  "3H": 1,
+  "2H": 1,
+  "1H": 1,
 }
+Z = zDict[ionName]
+mass = massDict[ionName]
+runMode = 2
 
-//Uses Rodriguez formulat to calculate the rotation matrix from (dx,dy,dz) to (1,0,0) frame.
-//We can then easily apply this to all recoil points
-array<array<float, 3>, 3> ComputeRotationMatrix(float dx, float dy, float dz) {
-  const float sinThetaCutoff = 0.000000174532; //sin(0.0000001 deg) — treat as aligned if below this
+#Target description
+target_name = "LiF"
+target_nElements = 2
+target_nLayers = 1
+target_start_offset = 0 #Angstroms, we offset the start point to save backscattered ions
 
-  //Normalize direction vector
-  float norm = sqrt(dx*dx + dy*dy + dz*dz);
-  if (norm == 0.0f) {
-    //Degenerate case
-    return {{
-        {1., 0., 0.},
-        {0., 1., 0.},
-        {0., 0., 1.}
-    }};
-  }
-  dx /= norm;
-  dy /= norm;
-  dz /= norm;
+#Note if you want the same element in different layers, you can optionally include it twice to track
+#recoils separately and set separate displacement energies
+target_element_names = ["Li","F"]
+target_element_Zs = [3,9]
+target_element_masses = [6.941,18.998]
+target_element_TDEs = [25,25] #eV, displacement energy for each element.
+target_element_LBEs = [3., 3.] #eV, lattice binding energies
+target_element_SBEs = [1.67, 2] #eV, surface binding energies
 
-  //Rotation axis = (dx,dy,dz) × (1,0,0) = (0, dz, -dy)
-  float ax = 0.f;
-  float ay = dz;
-  float az = -dy;
+layer_names = ["LiF"]
+layer_depths = [2000000] #Angstroms. (2mm) - we want to be sure ions won't range out
+target_depth = sum(layer_depths)
+layer_densities  = [2.635] # g/cm^3]
+#stoichs correspond to target_elements
+layer_stoichs = [[0.5,0.5]]
+layer_phases = [1]
 
-  //sin(theta) = |axis| (since both vectors are unit length)
-  float sinTheta = sqrt(ay * ay + az * az);
+#Location of SRIM folder
+srimFolder = "C:/Users/Sam/Desktop/SRIM_exe/"
+if not srimFolder.endswith("/"):
+  srimFolder+="/"
 
-  //If already aligned, skip rotation
-  if (sinTheta < sinThetaCutoff) {
-    return {{
-        {1., 0., 0.},
-        {0., 1., 0.},
-        {0., 0., 1.}
-    }};
-  }
+outputFolder = "C:/Users/Sam/Documents/code/trimRunner/outputs/{0}/{1}/".format(target_name,ionName)
+if not os.path.exists(outputFolder):
+  os.mkdir(outputFolder)
 
-  //Normalize rotation axis
-  ax /= sinTheta;
-  ay /= sinTheta;
-  az /= sinTheta;
+def makeTrimInputString(energy):
+  lines=[]
+  headerLine = "==> SRIM-2013.00 This file controls TRIM Calculations."
+  ionHeaderLine = "Ion: Z1 ,  M1,  Energy (keV), Angle,Number,Bragg Corr,AutoSave Number."
+  ionLine = "     {0}   {1:.3f}         {2}       0  {3} 0    {4}".format(Z,mass,energy,nps,nps+1)
+  lines.append(headerLine)
+  lines.append(ionHeaderLine)
+  lines.append(ionLine)
 
-  float cosTheta = dx; //cos(theta) = dot((dx,dy,dz), (1,0,0)) = dx
-  float t = 1.0f - cosTheta;
-  float s = sinTheta;
+  cascadeHeaderLine = "Cascades(1=No;2=Full;3=Sputt;4-5=Ions;6-7=Neutrons), Random Number Seed, Reminders"
+  cascadeLine = f"     {runMode}     0     0"
+  lines.append(cascadeHeaderLine)
+  lines.append(cascadeLine)
 
-  //Rodrigues rotation matrix
-  return {{
-    {cosTheta + t*ax*ax,     t*ax*ay - s*az,    t*ax*az + s*ay},
-    {t*ax*ay + s*az,         cosTheta + t*ay*ay, t*ay*az - s*ax},
-    {t*ax*az - s*ay,         t*ay*az + s*ax,    cosTheta + t*az*az}
-  }};
-}
+  #Note, 1 = new file, 2 = extend
+  diskHeaderLine = "Diskfiles (0=no,1=yes): Ranges, Backscatt, Transmit, Sputtered, Collisions(1=Ion;2=Ion+Recoils), Special EXYZ.txt file"
+  diskLine = "     0     0     0     0     2     0"
+  lines.append(diskHeaderLine)
+  lines.append(diskLine)
+
+  targetHeaderLine = "Target material : Number of Elements & Layers"
+  targetLine = '"{0} ({1}) into {2}"     {3}     {4}'.format(ionName,energy,target_name,target_nElements,target_nLayers)
+  lines.append(targetHeaderLine)
+  lines.append(targetLine)
+  
+  plotHeaderLine = "PlotType (0-5); Plot Depths: Xmin, Xmax(Ang.) [=0 0 for Viewing Full Target]"
+  plotLine = "     5     {0}     {1}".format(target_start_offset,target_depth)
+  lines.append(plotHeaderLine)
+  lines.append(plotLine)
+
+  targetElementsHeaderLine = "Target Elements:    Z   Mass(amu)"
+  lines.append(targetElementsHeaderLine)
+  for i,elemName in enumerate(target_element_names):
+     targetElementLine = "Atom {0} = {1} =".format(i,elemName)
+     nSpaces = 15-len(targetElementLine)
+     targetElementLine += " "*nSpaces + "{0}  {1:.3f}".format(target_element_Zs[i],target_element_masses[i])
+     lines.append(targetElementLine)
+
+  layerMetaHeaderLine = "Layer   Layer Name /               Width Density"
+  for i,elemName in enumerate(target_element_names):
+    layerMetaHeaderLine +="     {0}({1})".format(elemName,target_element_Zs[i])
+  lines.append(layerMetaHeaderLine)
+
+  layerHeaderLine = "Numb.   Description                (Ang) (g/cm3)"
+  for i in range(0,len(layer_names)):
+     layerHeaderLine+="    Stoich"
+  lines.append(layerHeaderLine)
+  for i,layer_name in enumerate(layer_names):
+    layerLine = '{0}      "{1}"           {2}  {3:.3f}'.format(i,layer_name,layer_depths[i],layer_densities[i])
+    for stoich in layer_stoichs[i]:
+      layerLine+="    {0}".format(stoich)
+    lines.append(layerLine)
+
+  layerPhaseHeaderLine = "Target layer phases (0=Solid, 1=Gas)"
+  layerPhaseLine=""
+  for layer_phase in layer_phases:
+    layerPhaseLine+="{0} ".format(layer_phase)
+  lines.append(layerPhaseHeaderLine)
+  lines.append(layerPhaseLine)
+  
+  layerBraggCorrectionHeaderLine = "Target Compound Corrections (Bragg)"
+  layerBraggCorrectionLine=""
+  for layer_phase in layer_phases:
+    layerBraggCorrectionLine+="1 "
+  lines.append(layerBraggCorrectionHeaderLine)
+  lines.append(layerBraggCorrectionLine)
+  
+  targetElementTDEHeaderLine = "Individual target atom displacement energies (eV)"
+  lines.append(targetElementTDEHeaderLine)
+  targetElementTDELine = ""
+  for TDE in target_element_TDEs:
+    targetElementTDELine+="{0} ".format(TDE)  
+  lines.append(targetElementTDELine)
+
+  targetElementLBEHeaderLine = "Individual target atom lattice binding energies (eV)"
+  lines.append(targetElementLBEHeaderLine)
+  targetElementLBELine = ""
+  for LBE in target_element_LBEs:
+    targetElementLBELine+="{0} ".format(LBE)
+  lines.append(targetElementLBELine)
+
+  targetElementSBEHeaderLine = "Individual target atom surface binding energies (eV)"
+  lines.append(targetElementSBEHeaderLine)
+  targetElementSBELine = ""
+  for SBE in target_element_SBEs:
+    targetElementSBELine+="{0} ".format(SBE)
+  lines.append(targetElementSBELine)
+
+  stoppingPowerHeaderline="Stopping Power Version (1=2008, 0=2008)"
+  stoppingPowerLine=" 1"
+  lines.append(stoppingPowerHeaderline)
+  lines.append(stoppingPowerLine)
+  return lines
+
+def writeLines(lines,srimFolder):
+  trimFile = open("{0}TRIM.in".format(srimFolder),"w")
+  for line in lines:
+    if not line.endswith("\n"):
+      line+="\n"
+      trimFile.write(line)
+  trimFile.close()
+
+# ========== MAIN ==========
+for energy in energies:
+  #Go to SRIM folder, make TRIMIN.txt
+  os.chdir(srimFolder)
+  lines = makeTrimInputString(energy)
+  writeLines(lines,srimFolder)
+
+  #Run SRIM
+  os.system("TRIM.exe")  # This runs SRIM in batch mode 
+
+  #Mv output
+  os.rename("C:\\Users\\Sam\\Desktop\\SRIM_exe\\SRIM Outputs\\COLLISON.txt", "C:\\Users\\Sam\\Desktop\\SRIM_exe\\SRIM Outputs\\{0}_{1}.txt".format(target_name,ionName))
