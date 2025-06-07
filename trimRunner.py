@@ -1,12 +1,11 @@
 import os
 import numpy as np
 import pickle
-import lzma
 
 #Incident ion
-ionName = "19F"
-energies = [6200]
-nps = 100000
+ionName = "1H"
+energies = [3200]
+nps = 300000
 
 #Mass evaluation from https://www-nds.iaea.org/amdc/ame2020/mass_1.mas20.txt
 #subtracting off # of protons * 0.000548579905 amu to remove electron contribution
@@ -32,6 +31,7 @@ zDict = {
 }
 Z = zDict[ionName]
 mass = massDict[ionName]
+runMode = 2
 
 #Target description
 target_name = "LiF"
@@ -75,7 +75,7 @@ def makeTrimInputString(energy):
   lines.append(ionLine)
 
   cascadeHeaderLine = "Cascades(1=No;2=Full;3=Sputt;4-5=Ions;6-7=Neutrons), Random Number Seed, Reminders"
-  cascadeLine = "     2     0     0"
+  cascadeLine = f"     {runMode}     0     0"
   lines.append(cascadeHeaderLine)
   lines.append(cascadeLine)
 
