@@ -16,7 +16,7 @@
 using namespace std;
 
 struct CascadeData {
-  vector<int16_t> primaryEnergies;
+  vector<int32_t> primaryEnergies;
   vector<float> primary_xLocs;
   vector<float> primary_yLocs;
   vector<float> primary_zLocs;
@@ -27,7 +27,7 @@ struct CascadeData {
 };
 
 //Functions
-void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>& nVacs, vector<float>&dEs, float clusteringDistance_nm, int16_t binSize_keV, int maxEntriesPerBin, int16_t maxEnergy_keV, int16_t minEnergy_keV);
+void ProcessThrow(CascadeData& data, TTree* tree, int32_t& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>& nVacs, vector<float>&dEs, float clusteringDistance_nm, int32_t binSize_eV, int maxEntriesPerBin, int32_t maxEnergy_eV, int32_t minEnergy_eV);
 
 //Takes dx,dy,dz unit vector and computes the matrix to rotate arbitrary points in that space to 1,0,0
 array<array<float, 3>, 3> ComputeRotationMatrix(float dx, float dy, float dz);
@@ -38,12 +38,12 @@ int main(int argc, char* argv[]) {
   bool saveMemory=false;
 
   //Srim settings  
-  int16_t minEnergy_keV = 2724;
-  int16_t maxEnergy_keV = 2735;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
+  int32_t minEnergy_eV = 0;
+  int32_t maxEnergy_eV = 5000e3;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
 
 
-  int maxEntriesPerBin = 2e5;  //Avoid filling up too much data at lower energys
-  int16_t binSize_keV = 5;       //Bin size
+  int maxEntriesPerBin = 5e2;  //Avoid filling up too much data at lower energys
+  int32_t binSize_eV = 1e3;       //Bin size
   
   //
   float clusteringDistance_nm = 4.026*0.1*1.5;  //4.026 Angstroms is the lattice distance, but we're using 1.5 lattice spacings
@@ -73,14 +73,14 @@ int main(int argc, char* argv[]) {
     unsortedTree->SetDirectory(0);
   }
   
-  int16_t energy = 0;
+  int32_t energy = 0;
   vector<float> xs;
   vector<float> ys;
   vector<float> zs;
   vector<int> nVacs;
   vector<float> dEs;
 
-  unsortedTree->Branch("energy_keV", &energy, "energy_keV/S");
+  unsortedTree->Branch("energy_eV", &energy, "energy_eV/i");
   unsortedTree->Branch("xs_nm", &xs);
   unsortedTree->Branch("ys_nm", &ys);
   unsortedTree->Branch("zs_nm", &zs);
@@ -138,7 +138,7 @@ int main(int argc, char* argv[]) {
     else if (line.find("New Cascade") != string::npos) {
       iss >> dummy >> energyStr >> xStr >> yStr >> zStr;
       float eFloat = std::stof(energyStr);
-      int16_t eRounded = static_cast<int16_t>(std::round(eFloat));
+      int32_t eRounded = static_cast<int32_t>(std::round(eFloat*1000.0f));
       data.primaryEnergies.push_back(eRounded);
       data.primary_xLocs.push_back(stof(xStr)*0.1);
       data.primary_yLocs.push_back(stof(yStr)*0.1);
@@ -175,7 +175,7 @@ int main(int argc, char* argv[]) {
       }
       
       throwNum++; 
-      ProcessThrow(data,unsortedTree,energy,xs,ys,zs,nVacs,dEs,clusteringDistance_nm,binSize_keV,maxEntriesPerBin,maxEnergy_keV,minEnergy_keV);
+      ProcessThrow(data,unsortedTree,energy,xs,ys,zs,nVacs,dEs,clusteringDistance_nm,binSize_eV,maxEntriesPerBin,maxEnergy_eV,minEnergy_eV);
 
       //Clear primary info
       data.primaryEnergies.clear();
@@ -220,7 +220,7 @@ int main(int argc, char* argv[]) {
   #ifdef WRITE_CSV
   cout<<"Writing CSV..."<<endl;
   ofstream csvOut("trimTracks.csv");
-  csvOut << "energy_keV,xs_nm,ys_nm,zs_nm,nVacs\n";
+  csvOut << "energy_eV,xs_nm,ys_nm,zs_nm,nVacs\n";
 
   for (Long64_t i = 0; i < trimTree->GetEntries(); i++) {
       trimTree->GetEntry(i);
@@ -242,7 +242,7 @@ int main(int argc, char* argv[]) {
 }
 
 
-void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>&nVacs, vector<float>& dEs, float clusteringDistance_nm, int16_t binSize_keV, int maxEntriesPerBin,int16_t maxEnergy_keV,int16_t minEnergy_keV) {
+void ProcessThrow(CascadeData& data, TTree* tree, int32_t& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<int>&nVacs, vector<float>& dEs, float clusteringDistance_nm, int32_t binSize_eV, int maxEntriesPerBin,int32_t maxEnergy_eV,int32_t minEnergy_eV) {
   float startX = 0;
   float startY = 0;
   float startZ = 0;
@@ -256,10 +256,10 @@ void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>
     if (data.recoil_xLocs[i].empty()) continue;
 
     //If energy is below max and above min, process
-    if ((data.primaryEnergies[i]<=maxEnergy_keV)&&(data.primaryEnergies[i]>minEnergy_keV)) {
+    if ((data.primaryEnergies[i]<=maxEnergy_eV)&&(data.primaryEnergies[i]>minEnergy_eV)) {
 
       //If we have too much data in the bin, skip
-      int binIndex = static_cast<int>(data.primaryEnergies[i] / binSize_keV);
+      int binIndex = static_cast<int>(data.primaryEnergies[i] / binSize_eV);
       if (energyBinCounter[binIndex] <= maxEntriesPerBin) {
 
         //1. Get direction of primary
@@ -352,39 +352,52 @@ void ProcessThrow(CascadeData& data, TTree* tree, int16_t& energy, vector<float>
 //Uses Rodriguez formulat to calculate the rotation matrix from (dx,dy,dz) to (1,0,0) frame.
 //We can then easily apply this to all recoil points
 array<array<float, 3>, 3> ComputeRotationMatrix(float dx, float dy, float dz) {
-  //If
-  const float sinThetaCutoff = 0.00000174532; //sin(0.00001 degrees). If a vector is within this of the x-axis, we will skip the rotation.
+  const float sinThetaCutoff = 0.000000174532; //sin(0.0000001 deg) — treat as aligned if below this
 
-  //Compute rotation axis: (dx,dy,dz) x (1,0,0)
-  float ax = 0; //dy * uz - dz * uy;
-  float ay = dz; //dz * ux - dx * uz;
-  float az = -dy; //dx * uy - dy * ux;
+  //Normalize direction vector
+  float norm = sqrt(dx*dx + dy*dy + dz*dz);
+  if (norm == 0.0f) {
+    //Degenerate case
+    return {{
+        {1., 0., 0.},
+        {0., 1., 0.},
+        {0., 0., 1.}
+    }};
+  }
+  dx /= norm;
+  dy /= norm;
+  dz /= norm;
 
-  // Magnitude of cross product = |a||b|sin(theta) = sin(theta)
-  float sinTheta = sqrt(ay * ay + az * az); //sqrt(ax * ax + ay * ay + az * az)
+  //Rotation axis = (dx,dy,dz) × (1,0,0) = (0, dz, -dy)
+  float ax = 0.f;
+  float ay = dz;
+  float az = -dy;
 
-  // If vectors are nearly aligned, return identity
+  //sin(theta) = |axis| (since both vectors are unit length)
+  float sinTheta = sqrt(ay * ay + az * az);
+
+  //If already aligned, skip rotation
   if (sinTheta < sinThetaCutoff) {
     return {{
         {1., 0., 0.},
         {0., 1., 0.},
         {0., 0., 1.}
     }};
-}
-  // Normalize rotation axisaxis
+  }
+
+  //Normalize rotation axis
   ax /= sinTheta;
   ay /= sinTheta;
   az /= sinTheta;
 
-  //(dx,dy,dz) dot (1,0,0) = |a||b|cos(theta) = cos(theta)
-  float cosTheta = dx; //vx * ux + vy * uy + vz * uz;
+  float cosTheta = dx; //cos(theta) = dot((dx,dy,dz), (1,0,0)) = dx
+  float t = 1.0f - cosTheta;
+  float s = sinTheta;
 
-  // Rodrigues formula
-  float t = 1 - cosTheta;
-
+  //Rodrigues rotation matrix
   return {{
-      {cosTheta, -sinTheta*az, sinTheta*ay},      //{t*ax*ax + c    , t*ax*ay - s*az, t*ax*az + s*ay},
-      {sinTheta*az, t*ay*ay + cosTheta, t*ay*az}, //{t*ax*ay + s*az, t*ay*ay + c    , t*ay*az - s*ax},
-      {-sinTheta*ay, t*ay*az, t*az*az + cosTheta} //{t*ax*az - s*ay, t*ay*az + s*ax, t*az*az + c    }
+    {cosTheta + t*ax*ax,     t*ax*ay - s*az,    t*ax*az + s*ay},
+    {t*ax*ay + s*az,         cosTheta + t*ay*ay, t*ay*az - s*ax},
+    {t*ax*az - s*ay,         t*ay*az + s*ax,    cosTheta + t*az*az}
   }};
 }
