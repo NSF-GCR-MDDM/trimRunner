@@ -13,8 +13,8 @@ void sorter(TString inpName, TString outName)
         return;
     }
 
-    std::cout << "Building index on energy_keV..." << std::endl;
-    tree->BuildIndex("energy_keV");  // use index for sorting
+    std::cout << "Building index on energy_eV..." << std::endl;
+    tree->BuildIndex("energy_eV");  // use index for sorting
 
     // Open output file
     TFile fout(outName, "RECREATE");
