@@ -1,11 +1,30 @@
 import os
 import numpy as np
 import pickle
+import sys
+import uuid
+import shutil
+import gzip
+
+overwriteFiles = 0
 
 #Incident ion
-ionName = "1H"
-energies = [3200]
-nps = 300000
+ionName = sys.argv[1]
+if len(sys.argv)==4:
+  startEnergy = float(sys.argv[2])
+  endEnergy = float(sys.argv[3])
+else:
+  startEnergy = 0.5
+  endEnergy = 3000.5
+energies = np.arange(startEnergy, endEnergy, 1)[::-1]
+nps = 500
+
+# Create a unique working directory for this ion run
+unique_id = uuid.uuid4().hex[:8]
+temp_workdir = os.path.join("C:/Users/Sam/Desktop/SRIM_tmp", f"{ionName}_{unique_id}_{endEnergy}")
+shutil.copytree("C:/Users/Sam/Desktop/SRIM_exe", temp_workdir)
+srimFolder = temp_workdir + "/"
+
 
 #Mass evaluation from https://www-nds.iaea.org/amdc/ame2020/mass_1.mas20.txt
 #subtracting off # of protons * 0.000548579905 amu to remove electron contribution
@@ -56,14 +75,6 @@ layer_densities  = [2.635] # g/cm^3]
 layer_stoichs = [[0.5,0.5]]
 layer_phases = [1]
 
-#Location of SRIM folder
-srimFolder = "C:/Users/Sam/Desktop/SRIM_exe/"
-if not srimFolder.endswith("/"):
-  srimFolder+="/"
-
-outputFolder = "C:/Users/Sam/Documents/code/trimRunner/outputs/{0}/{1}/".format(target_name,ionName)
-if not os.path.exists(outputFolder):
-  os.mkdir(outputFolder)
 
 def makeTrimInputString(energy):
   lines=[]
@@ -169,13 +180,40 @@ def writeLines(lines,srimFolder):
 
 # ========== MAIN ==========
 for energy in energies:
-  #Go to SRIM folder, make TRIMIN.txt
-  os.chdir(srimFolder)
-  lines = makeTrimInputString(energy)
-  writeLines(lines,srimFolder)
+    # Create output folder
+    outFolder = os.path.join("C:\\Users\\Sam\\Desktop\\SRIM_outputs", f"{target_name}_{ionName}")
+    os.makedirs(outFolder, exist_ok=True)
 
-  #Run SRIM
-  os.system("TRIM.exe")  # This runs SRIM in batch mode 
+    txt_name = f"{energy:06.1f}.txt"
+    txt_path = os.path.join(outFolder, txt_name)
+    gz_path = txt_path + ".gz"
 
-  #Mv output
-  os.rename("C:\\Users\\Sam\\Desktop\\SRIM_exe\\SRIM Outputs\\COLLISON.txt", "C:\\Users\\Sam\\Desktop\\SRIM_exe\\SRIM Outputs\\{0}_{1}.txt".format(target_name,ionName))
+    # Check if either .txt or .txt.gz exists
+    if not overwriteFiles and (os.path.exists(txt_path) or os.path.exists(gz_path)):
+        continue
+
+    # Create new SRIM input
+    os.chdir(srimFolder)
+    lines = makeTrimInputString(energy)
+    writeLines(lines, srimFolder)
+
+    # Run SRIM
+    exit_code = os.system("TRIM.exe")
+
+    if exit_code == 0:
+        print("TRIM completed successfully.")
+
+        # Move and compress output
+        src = os.path.join(srimFolder, "SRIM Outputs", "COLLISON.txt")
+
+        if overwriteFiles and os.path.exists(txt_path):
+            os.remove(txt_path)
+        os.rename(src, txt_path)
+
+        with open(txt_path, 'rb') as f_in:
+            data = f_in.read()
+        with gzip.open(gz_path, 'wb') as f_out:
+            f_out.write(data)
+        os.remove(txt_path)
+
+shutil.rmtree(srimFolder)
