@@ -52,7 +52,7 @@ target_element_LBEs = [3., 3.] #eV, lattice binding energies
 target_element_SBEs = [1.67, 2] #eV, surface binding energies
 
 layer_names = ["LiF"]
-layer_depths = [2000000] #Angstroms. (2mm) - we want to be sure ions won't range out
+layer_depths = [20000000] #Angstroms. (2mm) - we want to be sure ions won't range out
 target_depth = sum(layer_depths)
 layer_densities  = [2.635] # g/cm^3]
 #stoichs correspond to target_elements
