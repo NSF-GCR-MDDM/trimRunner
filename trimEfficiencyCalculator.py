@@ -12,8 +12,8 @@ import trimUtils
 if len(sys.argv)>1:
   ion_name=sys.argv[1]
 else:
-  ion_name = "1H"
-energies = np.arange(0.1,100,0.1) #keV
+  ion_name = "19F"
+energies = np.arange(0.001,2,0.001) #keV
 nps = 20000
 
 #Target description
@@ -67,7 +67,7 @@ if __name__ == "__main__":
 
             print(f"TRIM run completed successfully for E={energy} keV, eff={eff}")
 
-            if eff > 0.999:    
+            if eff >= 1.:    
               print(f"Efficiency saturated (>0.999) at {energy:.3f} keV — stopping sweep.")
               break
 
@@ -76,6 +76,6 @@ if __name__ == "__main__":
         line="Ion energy (keV),efficiency\n"
         outFile.write(line)
         for i in range(0,len(output_energies)):
-            line=f"{output_energies[i]},{output_efficiencies[i]}\n"
+            line=f"{output_energies[i]:.4f},{output_efficiencies[i]:.5f}\n"
             outFile.write(line)
     #shutil.rmtree(temp_workdir, ignore_errors=True)
