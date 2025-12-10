@@ -35,7 +35,7 @@ struct CascadeData {
 //Functions
 void ProcessThrow(CascadeData& data, 
   TTree* tree, int32_t& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<uint8_t>& nVacs, 
-  vector<uint8_t>& recoil_displacedZs, vector<int32_t>& recoilEnergies_eV,
+  vector<uint8_t>& recoil_displacedZs, vector<int32_t>& recoilEnergies_eV,vector<int16_t>& recoilNums,
   int32_t binSize_eV, int maxEntriesPerBin, int32_t maxEnergy_eV, int32_t minEnergy_eV);
 
 //Takes dx,dy,dz unit vector and computes the matrix to rotate arbitrary points in that space to 1,0,0
@@ -43,17 +43,15 @@ array<array<float, 3>, 3> ComputeRotationMatrix(float dx, float dy, float dz);
 
 std::map<int, int> energyBinCounter;
 
-
-
 int main(int argc, char* argv[]) {
 
   //Srim settings  
   int32_t minEnergy_eV = 0;
-  int32_t maxEnergy_eV = 300e3;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
+  int32_t maxEnergy_eV = 200e3;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
 
-  int maxEntriesPerBin = 1e3;  //Avoid filling up too much data at lower energys
-  int32_t binSize_eV = 1e3;       //Bin size, 1 keV
-
+  int maxEntriesPerBin = 100;     //Avoid filling up too much data at lower energys
+  int32_t binSize_eV = 1e3;       //Bin size, in eV. 1 keV right now
+ 
   //--------------------//
   //Parse cmd line input//
   //--------------------//
@@ -94,17 +92,21 @@ int main(int argc, char* argv[]) {
   vector<uint8_t> nVacs;
   vector<uint8_t> displacedZs;
   vector<int32_t> recoilEnergies_eV;
+  vector<int16_t> recoilNums;
 
   trimTree->Branch("ionEnergy_eV", &ionEnergy_eV, "ionEnergy_eV/i");
+  trimTree->Branch("recoilNums", &recoilNums);
   trimTree->Branch("xs_nm", &xs);
   trimTree->Branch("ys_nm", &ys);
   trimTree->Branch("zs_nm", &zs);
   trimTree->Branch("nVacs", &nVacs);
   trimTree->Branch("displacedAtoms_Z", &displacedZs);
   trimTree->Branch("recoilEnergies_eV", &recoilEnergies_eV);
-
-  trimTree->SetAutoFlush(0);  // disable autosizing
-  trimTree->SetBasketSize("*", 1000000); //trying to debug...
+  
+  trimTree->SetMaxTreeSize(200000000000LL); //200GB
+  trimTree->SetAutoFlush(10000);
+  trimTree->SetAutoSave(500000000);  // Every 500 MB
+  //trimTree->SetBasketSize("*", 1000000); //trying to debug...
 
   //-------------//
   //Open the file//
@@ -150,6 +152,9 @@ int main(int argc, char* argv[]) {
   bool ignoreReplacedVacancy = false;
   string dummy;
   string energyStr, recoilEnergyStr, xStr, yStr, zStr, atomStr, vacancyStr, replacementStr;
+  
+  double initialThrownEnergy_eV = 0;
+  double thrownEnergy_eV = 0;
 
   //---------------------------//
   //Load through collision file//
@@ -164,19 +169,40 @@ int main(int argc, char* argv[]) {
     }
     istringstream iss(line); 
 
+    //Parse initial energy line
+    if (line.find("Ion Energy =") != string::npos) {
+        std::string digits;
+        for (char c : line) {
+            if ((c >= '0' && c <= '9') || c == '.') {
+                digits.push_back(c);
+            }
+        }
+        if (!digits.empty()) {
+            float E0_keV = std::stof(digits);
+            initialThrownEnergy_eV = static_cast<int32_t>(std::round(E0_keV * 1000.0f));
+            thrownEnergy_eV = initialThrownEnergy_eV;
+        }
+        continue;
+    }
+
     //If "==" or "--" in line, skip
     if (line.find("===") != string::npos || line.find("--") != string::npos) continue;     
 
     //elif "New Cascade" in line, start of a new primary--we need to store the energy and x,y,z positions
     else if (line.find("New Cascade") != string::npos) {
       iss >> dummy >> energyStr >> xStr >> yStr >> zStr >> dummy >> dummy >> recoilEnergyStr;
-      float eFloat = std::stof(energyStr);
-      int32_t eRounded_eV = static_cast<int32_t>(std::round(eFloat*1000.0f)); //convert to eV
+      
+      float preCollisionEnergy_keV = std::stof(energyStr);
+      int32_t preCollisionEnergy_eV = static_cast<int32_t>(std::round(preCollisionEnergy_keV*1000.0f)); //convert to eV
+
       int32_t collisionRecoilEnergy_eV = static_cast<int32_t>(std::round(std::stof(recoilEnergyStr)));
-      data.primaryEnergies.push_back(eRounded_eV - collisionRecoilEnergy_eV);
+
+      data.primaryEnergies.push_back(thrownEnergy_eV);
       data.primary_xLocs.push_back(stof(xStr)*0.1);
       data.primary_yLocs.push_back(stof(yStr)*0.1);
       data.primary_zLocs.push_back(stof(zStr)*0.1);
+
+      thrownEnergy_eV = preCollisionEnergy_eV - collisionRecoilEnergy_eV;
     }
 
     //elif "Prime Recoil" in line, start of a new cascade. Enable tracking.
@@ -205,7 +231,7 @@ int main(int argc, char* argv[]) {
 
     //elif "For ion" in line--end of a primary. Process the throw and then clear vectors
     else if (line.find("For Ion") != string::npos) {
-      if (throwNum%1000==0) {
+      if (throwNum%100==0) {
         auto t_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = t_end - t_start;
 
@@ -216,7 +242,7 @@ int main(int argc, char* argv[]) {
       
       throwNum++; 
       ProcessThrow(data, //Contains data to load
-        trimTree,ionEnergy_eV,xs,ys,zs,nVacs,displacedZs,recoilEnergies_eV, //Branches to fill
+        trimTree,ionEnergy_eV,xs,ys,zs,nVacs,displacedZs,recoilEnergies_eV,recoilNums, //Branches to fill
         binSize_eV,maxEntriesPerBin,maxEnergy_eV,minEnergy_eV); //Flags
 
       //Clear primary info
@@ -231,6 +257,8 @@ int main(int argc, char* argv[]) {
       data.recoil_nVacs.clear();
       data.recoil_displacedZs.clear();
       data.recoil_energies_eV.clear();
+      //Reset exit energy
+      thrownEnergy_eV = initialThrownEnergy_eV;
     }
 
     //If enable recoil tracking, store the energy, xloc, yloc, zloc if nVacanies >0 and atom is in atomsToTrack
@@ -260,14 +288,12 @@ int main(int argc, char* argv[]) {
   outputFile->Close();
 }
 
-
-
 ///////////////////
 //THROW PROCESSOR//
 ///////////////////
 void ProcessThrow(CascadeData& data, 
   TTree* tree, int32_t& energy, vector<float>& xs, vector<float>& ys, vector<float>& zs, vector<uint8_t>&nVacs, 
-  vector<uint8_t>& displacedZs, vector<int32_t>& recoilEnergies_eV,
+  vector<uint8_t>& displacedZs, vector<int32_t>& recoilEnergies_eV,vector<int16_t>& recoilNums,
   int32_t binSize_eV, int maxEntriesPerBin,int32_t maxEnergy_eV,int32_t minEnergy_eV) {
 
   float startX = 0;
@@ -279,15 +305,32 @@ void ProcessThrow(CascadeData& data,
   float prevZ = startZ;
 
   for (size_t i = 0; i < data.primaryEnergies.size(); i++) {
-    //Shouldn't be empty but we'll check
-    if (data.recoil_xLocs[i].empty()) continue;
 
+    if (data.recoil_xLocs[i].empty()) {
+      std::cout<<"Found recoil without any vacancies"<<std::endl;
+    }
+    
     //If energy is below max and above min, process
     if ((data.primaryEnergies[i]<=maxEnergy_eV)&&(data.primaryEnergies[i]>minEnergy_eV)) {
 
       //If we have too much data in the bin, skip
       int binIndex = static_cast<int>(data.primaryEnergies[i] / binSize_eV);
       if (energyBinCounter[binIndex] <= maxEntriesPerBin) {
+
+        // If no vacancies, still record an empty entry
+        if (data.recoil_xLocs[i].empty()) {
+            xs.clear();
+            ys.clear();
+            zs.clear();
+            nVacs.clear();
+            displacedZs.clear();
+            recoilEnergies_eV.clear();
+            recoilNums.clear();
+            energy = data.primaryEnergies[i];
+            tree->Fill();
+            energyBinCounter[binIndex]++;
+            continue;
+        }
 
         //1. Get direction of primary
         //Get direction primary took from previous 
@@ -309,13 +352,14 @@ void ProcessThrow(CascadeData& data,
         float offsetY = prevY;
         float offsetZ = prevZ;
 
-        //Flatten the data, apply offset
+        //Flatten the data, apply offset to all downstream depositions
         vector<float> flatX;
         vector<float> flatY; 
         vector<float> flatZ;
-        vector<int16_t> flatNVacs;
-        vector<int16_t> flatDisplacedZs;
+        vector<uint8_t> flatNVacs;
+        vector<uint8_t> flatDisplacedZs;
         vector<float> flatRecoilEnergies_eV;
+        vector<int16_t> flatRecoilNums;
         for (size_t j = i; j < data.primaryEnergies.size(); j++ ) {
           for (size_t k = 0; k < data.recoil_xLocs[j].size(); k++) {
             //Flatten future data while applying the offset 
@@ -325,6 +369,7 @@ void ProcessThrow(CascadeData& data,
             flatNVacs.push_back(data.recoil_nVacs[j][k]);
             flatDisplacedZs.push_back(data.recoil_displacedZs[j][k]);
             flatRecoilEnergies_eV.push_back(data.recoil_energies_eV[j][k]);
+            flatRecoilNums.push_back(static_cast<int16_t>(j-i));
           }
         }
 
@@ -335,6 +380,7 @@ void ProcessThrow(CascadeData& data,
         nVacs.clear();
         displacedZs.clear();
         recoilEnergies_eV.clear();
+        recoilNums.clear();
 
         //Rotate & Fill
         std::map<std::tuple<int, int, int>, int> clusters;   
@@ -350,6 +396,7 @@ void ProcessThrow(CascadeData& data,
           nVacs.push_back(flatNVacs.at(j));
           displacedZs.push_back(flatDisplacedZs.at(j));
           recoilEnergies_eV.push_back(flatRecoilEnergies_eV.at(j));
+          recoilNums.push_back(flatRecoilNums.at(j));
         }
 
         //6. Fill
