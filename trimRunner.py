@@ -5,12 +5,19 @@ import uuid
 import shutil
 import gzip
 import tarfile
-import trimUtils.py
+import trimUtils
+import sys
 
 #Incident ion
-ion_name = "1H"
-energy = 15000
-nps = 300000
+if len(sys.argv) >= 2:
+  ion_name = sys.argv[1]
+else:
+  ion_name = "19F"
+energy = 10.5
+if len(sys.argv) >= 3:
+  nps = int(sys.argv[2])
+else:
+  nps = 2000
 
 #Target description
 target_name = "LiF"
@@ -23,7 +30,7 @@ if __name__ == "__main__":
   srimFolder = temp_workdir + "/"
 
   # Make output folder, output file names
-  outputFolder = "C:/Users/Sam/Documents/code/trimRunner/data/txt/"
+  outputFolder = f"C:/Users/Sam/Documents/code/trimRunner/data/txt/{target_name}/"
   if not os.path.exists(outputFolder):
     os.mkdir(outputFolder)
 
