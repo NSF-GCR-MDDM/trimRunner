@@ -1,4 +1,3 @@
-
 #Mass evaluation from https://www-nds.iaea.org/amdc/ame2020/mass_1.mas20.txt
 #subtracting off # of protons * 0.000548579905 amu to remove electron contribution
 massDict = {
@@ -18,6 +17,8 @@ massDict = {
   "18O": 17.9947709729,
   "16O": 15.99052598002,    #99.8%
   "16N": 16.002261865665,
+  "13C": 13.01448850157,
+  "12C": 11.99670852057,
   "8Li": 8.020840504285,
   "7Li": 7.014357694545,
   "6Li": 6.013477147705,
@@ -44,6 +45,8 @@ zDict = {
   "18O": 8,
   "16O": 8,
   "16N": 7,
+  "13C": 6,
+  "12C": 6,
   "8Li": 3,
   "7Li": 3,
   "6Li": 3,
@@ -64,6 +67,8 @@ def makeTrimInputString(energy,target_name,ion_name,nps):
     target_nElements = 2
   elif target_name == "Olivine":
     target_nElements = 4
+  elif target_name == "Diamond":
+    target_nElements = 1
   target_nLayers = 1
   target_start_offset = 0 #Angstroms
 
@@ -90,9 +95,22 @@ def makeTrimInputString(energy,target_name,ion_name,nps):
     target_element_SBEs = [6.47,3.7,6.8,4.75] #eV, surface binding energies
     layer_names = ["Olivine"]
     #https://webmineral.com/data/Olivine.shtml
-    layer_densities  = [3.32] # g/cm^3]
+    layer_densities  = [3.32] # g/cm^3
     #stoichs correspond to target_elements
     layer_stoichs = [[0.4,1.6,1.0,4.0]]
+  elif target_name == "Diamond":
+    target_element_names = ["C"]
+    target_element_Zs = [6]
+    target_element_masses = [12.01] #Natural abundances, atomic masses
+    target_element_TDEs = [31.] #eV, displacement energy for each element. From https://arxiv.org/pdf/2206.06772
+    target_element_LBEs = [3.] #eV, lattice binding energies. From https://www.sciencedirect.com/science/article/abs/pii/S0168583X21001890
+    target_element_SBEs = [7.4] #eV, surface binding energies. From https://www.sciencedirect.com/science/article/abs/pii/S0168583X21001890 
+    layer_names = ["Diamond"]
+    #https://webmineral.com/data/Olivine.shtml
+    layer_densities  = [3.51] # g/cm^3, from https://www.sciencedirect.com/science/article/abs/pii/S0168583X21001890 
+    #stoichs correspond to target_elements
+    layer_stoichs = [[1.0]]
+
   layer_depths = [20000000] #Angstroms. (2mm) - we want to be sure ions won't range out
   target_depth = sum(layer_depths)
   layer_phases = [0]
