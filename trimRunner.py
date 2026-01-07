@@ -13,14 +13,14 @@ if len(sys.argv) >= 2:
   ion_name = sys.argv[1]
 else:
   ion_name = "19F"
-energy = 10.5
+energy = 10 #keV
 if len(sys.argv) >= 3:
   nps = int(sys.argv[2])
 else:
   nps = 2000
 
 #Target description
-target_name = "LiF"
+target_name = "Diamond"
 
 if __name__ == "__main__":
   # Create a unique working directory for this ion run, cp srim to that folder
