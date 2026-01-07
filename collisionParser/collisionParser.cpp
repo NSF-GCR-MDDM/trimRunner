@@ -47,10 +47,10 @@ int main(int argc, char* argv[]) {
 
   //Srim settings  
   int32_t minEnergy_eV = 0;
-  int32_t maxEnergy_eV = 200e3;  //We start our SRIM sim slightly above this, at least 100 keV to allow for "burn in"
+  int32_t maxEnergy_eV = 1e3;  //We start our SRIM sim slightly above this, at least 1% or ~100 keV to allow for "burn in"
 
-  int maxEntriesPerBin = 100;     //Avoid filling up too much data at lower energys
-  int32_t binSize_eV = 1e3;       //Bin size, in eV. 1 keV right now
+  int maxEntriesPerBin = 10;     //Avoid filling up too much data at lower energys
+  int32_t binSize_eV = 0.1;       //Bin size, in eV
  
   //--------------------//
   //Parse cmd line input//
@@ -181,6 +181,7 @@ int main(int argc, char* argv[]) {
             float E0_keV = std::stof(digits);
             initialThrownEnergy_eV = static_cast<int32_t>(std::round(E0_keV * 1000.0f));
             thrownEnergy_eV = initialThrownEnergy_eV;
+            std::cout<<"Input energy is "<<thrownEnergy_eV<<" eV"<<std::endl;
         }
         continue;
     }
@@ -313,9 +314,13 @@ void ProcessThrow(CascadeData& data,
     //If energy is below max and above min, process
     if ((data.primaryEnergies[i]<=maxEnergy_eV)&&(data.primaryEnergies[i]>minEnergy_eV)) {
 
+      if ((data.primary_xLocs[i]>100) || (data.primary_yLocs[i]>100) || (data.primary_zLocs[i]>100)) {
+        std::cout<<data.primaryEnergies[i]<<","<<data.primary_xLocs[i]<<","<<data.primary_yLocs[i]<<","<<data.primary_zLocs[i]<<std::endl;
+      }
+      
       //If we have too much data in the bin, skip
       int binIndex = static_cast<int>(data.primaryEnergies[i] / binSize_eV);
-      if (energyBinCounter[binIndex] <= maxEntriesPerBin) {
+      if (energyBinCounter[binIndex] < maxEntriesPerBin) {
 
         // If no vacancies, still record an empty entry
         if (data.recoil_xLocs[i].empty()) {
@@ -372,7 +377,7 @@ void ProcessThrow(CascadeData& data,
             flatRecoilNums.push_back(static_cast<int16_t>(j-i));
           }
         }
-
+        float ratio = data.primaryEnergies.at(i)/static_cast<float>(flatNVacs.size());
         //Clear branch vectors
         xs.clear();
         ys.clear();
