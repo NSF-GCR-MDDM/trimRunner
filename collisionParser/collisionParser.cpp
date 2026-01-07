@@ -49,8 +49,8 @@ int main(int argc, char* argv[]) {
   int32_t minEnergy_eV = 0;
   int32_t maxEnergy_eV = 1e3;  //We start our SRIM sim slightly above this, at least 1% or ~100 keV to allow for "burn in"
 
-  int maxEntriesPerBin = 10;     //Avoid filling up too much data at lower energys
-  int32_t binSize_eV = 0.1;       //Bin size, in eV
+  int maxEntriesPerBin = 100;     //Avoid filling up too much data at lower energys
+  int32_t binSize_eV = 1;       //Bin size, in eV
  
   //--------------------//
   //Parse cmd line input//
