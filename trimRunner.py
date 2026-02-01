@@ -8,65 +8,86 @@ import tarfile
 import trimUtils
 import sys
 
-#Incident ion
-if len(sys.argv) >= 2:
-  ion_name = sys.argv[1]
-else:
-  ion_name = "19F"
-energy = 10 #keV
-if len(sys.argv) >= 3:
-  nps = int(sys.argv[2])
-else:
-  nps = 2000
+if len(sys.argv) < 2:
+  print("Error! Pass in config!\n")
+  sys.exit()
 
-#Target description
-target_name = "Diamond"
+inpFilename = sys.argv[1]
+mass_dict = trimUtils.createMassDict("mass_1.mas20.txt")
+materials_dict = trimUtils.createMaterialsDict()
+input_data = trimUtils.parseConfig(inpFilename)
+trimUtils.checkTrimArgs(input_data,mass_dict,materials_dict)
 
-if __name__ == "__main__":
-  # Create a unique working directory for this ion run, cp srim to that folder
-  unique_id = uuid.uuid4().hex[:8]
-  temp_workdir = os.path.join("C:/Users/Sam/Desktop/SRIM_tmp", f"{ion_name}_{unique_id}")
-  shutil.copytree("C:/Users/Sam/Desktop/SRIM_exe", temp_workdir)
-  srimFolder = temp_workdir + "/"
+SRIM_EXE_PATH= "C:/Users/Sam/Desktop/SRIM_exe"
+SRIM_TMP_PATH = "C:/Users/Sam/Desktop/SRIM_tmp"
 
-  # Make output folder, output file names
-  outputFolder = f"C:/Users/Sam/Documents/code/trimRunner/data/txt/{target_name}/"
-  if not os.path.exists(outputFolder):
-    os.mkdir(outputFolder)
+target_name = input_data["material"]
+ion_name = input_data["ionSymbol"]
+outputFolder = input_data["outputPath"]
+runMode = input_data["runMode"]
+energy = input_data["energy_keV"]
+nps = input_data["nps"]
 
-  txt_name = "{0}_{1}.txt".format(target_name, ion_name)
-  txt_path = os.path.join(outputFolder, txt_name)
+output_base_name = f"{target_name}_{ion_name}"
 
-  # Overwrite if exists
-  if os.path.exists(txt_path):
-    os.remove(txt_path)
-  tar_path =  "{0}_{1}.tar.gz".format(target_name, ion_name)
-  if os.path.exists(tar_path):
-    os.remove(tar_path)
+# Create new SRIM run folder, go there
+runFolder = trimUtils.makeTempSRIMFolder(f"{target_name}_{ion_name}",SRIM_TMP_PATH,SRIM_EXE_PATH)
+try:
+  os.chdir(runFolder)
 
-  # Create new SRIM input
-  os.chdir(srimFolder)
-  lines = trimUtils.makeTrimInputString(energy,target_name,ion_name,nps)
-  with open(f"{srimFolder}TRIM.in", "w") as trimFile:
-    for line in lines:
-      if not line.endswith("\n"):
-        line += "\n"
-      trimFile.write(line)
-    trimFile.close()
+  if runMode=="damage":
+    txt_path = os.path.join(outputFolder, f"{output_base_name}.txt")
+    tar_path = os.path.join(outputFolder, f"{output_base_name}.tar.gz")
+    if os.path.exists(txt_path):
+      os.remove(txt_path)
+    if os.path.exists(tar_path):
+      os.remove(tar_path)
 
-  # Run SRIM  
-  exit_code = os.system("TRIM.exe")
-
-  # Upon successful completion, mv collison.txt to file name, compress, remove temp folder
-  if exit_code == 0:
-    print("TRIM completed successfully.")
+    # Run SRIM return location of collison.txt [sic] 
+    collison_path = trimUtils.runSRIM(runFolder,input_data,mass_dict,materials_dict)
 
     # Move and compress output
-    src = os.path.join(srimFolder, "SRIM Outputs", "COLLISON.txt")
-    os.replace(src, txt_path)
+    os.replace(collison_path, txt_path)
 
     # Create .tar.gz
     with tarfile.open(tar_path, "w:gz") as tar:
       tar.add(txt_path, arcname=os.path.basename(txt_path))
       tar.close()
 
+  elif runMode=="efficiency":
+    csv_path = os.path.join(outputFolder, f"{output_base_name}.csv")
+    energies = np.arange(0.001,energy,0.001) #keV
+    output_efficiencies = []
+
+    for energy in energies:
+      input_data["energy_keV"] = energy
+      # Run SRIM, return location of collison.txt [sic] 
+      collison_path = trimUtils.runSRIM(runFolder,input_data,mass_dict,materials_dict)
+
+      #Parse output, essentially just count # of "Summary of Above Cascade"
+      nDamagelessPrimaries = 0
+      with open(collison_path, "r") as f:
+        for line in f:
+          # Every completed cascade ends with "Summary of Above Cascade"
+          if "Vacancies         = 000000.0" in line:
+            nDamagelessPrimaries += 1
+
+      #Calculate fraction of # damage producing recoils / nps
+      eff = float(nps-nDamagelessPrimaries)/float(nps)
+
+      #Append to CSV
+      output_efficiencies.append(eff)
+      os.remove(collison_path)
+      print(f"TRIM run completed successfully for E={energy} keV, eff={eff}")
+      if eff >= 1.:    
+        print(f"Efficiency saturated (>0.999) at {energy:.3f} keV — stopping sweep.")
+        break
+    
+    with open(csv_path,"w") as outFile:
+      line="Ion energy (keV),efficiency\n"
+      outFile.write(line)
+      for i in range(0,len(output_efficiencies)):
+        line=f"{energies[i]:.4f},{output_efficiencies[i]:.5f}\n"
+        outFile.write(line)
+finally:
+  shutil.rmtree(runFolder, ignore_errors=True)

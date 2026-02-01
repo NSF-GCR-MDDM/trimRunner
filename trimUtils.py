@@ -1,115 +1,108 @@
 #Mass evaluation from https://www-nds.iaea.org/amdc/ame2020/mass_1.mas20.txt
 #subtracting off # of protons * 0.000548579905 amu to remove electron contribution
-massDict = {
-  "58Fe": 57.91901049747,
-  "57Fe": 56.92112887247,
-  "56Fe": 55.92067245947,  #91.8%
-  "54Fe": 53.92534511147,
-  "30Si": 29.96609001833,
-  "29Si": 28.96881454567,
-  "28Si": 27.96924641575,   #92.2%
-  "26Mg": 25.97601001314,
-  "25Mg": 24.97925400714,
-  "24Mg": 23.97845873014,   #79%
-  "20F": 19.995044032855,
-  "19F": 18.993465942925,
-  "19O": 18.99918932976,
-  "18O": 17.9947709729,
-  "16O": 15.99052598002,    #99.8%
-  "16N": 16.002261865665,
-  "13C": 13.01448850157,
-  "12C": 11.99670852057,
-  "8Li": 8.020840504285,
-  "7Li": 7.014357694545,
-  "6Li": 6.013477147705,
-  "6He": 6.01778872919,
-  "4He": 4.00150609432,
-  "3He": 3.01493216216,
-  "3H": 3.015500701415,
-  "2H": 2.013553197939,
-  "1H": 1.007276451993
-}
-zDict = {
-  "58Fe": 26,
-  "57Fe": 26,
-  "56Fe": 26,
-  "30Si": 14,
-  "29Si": 14,
-  "28Si": 14,
-  "26Mg": 12,
-  "25Mg": 12,
-  "24Mg": 12,
-  "20F": 9,
-  "19F": 9,
-  "19O": 8,
-  "18O": 8,
-  "16O": 8,
-  "16N": 7,
-  "13C": 6,
-  "12C": 6,
-  "8Li": 3,
-  "7Li": 3,
-  "6Li": 3,
-  "6He": 2,
-  "4He": 2,
-  "3He": 2,
-  "3H": 1,
-  "2H": 1,
-  "1H": 1,
-}
-runMode = 2
+import pandas as pd
+import json
+import sys
+import uuid
+import os
+import shutil
 
-def makeTrimInputString(energy,target_name,ion_name,nps):
-  Z = zDict[ion_name]
-  mass = massDict[ion_name]
+def createMassDict(massFile="mass_1.mas20.txt"):
+  m_e_amu = 0.000548579905 
+  widths = [1,3,5,5,5,1,3,4,1,14,12,13,1, #a1,i3,i5,i5,i5,1x,a3,a4,1x,f14.6,f12.6,f13.5,1x,
+            10,1,2,13,11,1,3,1,13,12]     #f10.5,1x,a2,f13.5,f11.5,1x,i3,1x,f13.6,f12.6
+  names = ["skip1","N-Z","N","Z","A","skip2","El","O","skip3","mass_excess_keV","mass_excess_unc","binding_energy_keV","skip4",
+           "binding_energy_unc","skip5","skip6","beta_decay_energy_keV","beta_decay_energy_unc","skip7","mass_1_uamu","skip8","mass_2_uamu","mass_unc"]
+  df = pd.read_fwf(massFile, widths=widths, names=names, skiprows=37,dtype=str)
+
+  df = df[["A","Z","El","mass_1_uamu","mass_2_uamu"]].copy()
+  df["A"] = df["A"].str.strip()
+  df["El"] = df["El"].str.strip()
+  df["symbol"] = df["A"]+df["El"]
+  df["Z"] = df["Z"].astype(int)
+  df["mass_1_uamu"] = df["mass_1_uamu"].str.replace("#", "")
+  df["mass_2_uamu"] = df["mass_2_uamu"].str.replace("#", "")
+  df["mass_amu"] = (df["mass_1_uamu"].astype(float)*1e6 + df["mass_2_uamu"].astype(float))*1e-6 - df["Z"]*m_e_amu
+  df = df[["symbol","Z","mass_amu"]].dropna()
+
+  mass_dict = {}
+  for _, row in df.iterrows():
+    mass_dict[row["symbol"]] = {"Z": row["Z"], "mass_amu": row["mass_amu"]}
+
+  return mass_dict
+
+def parseConfig(inpFileName):
+  with open(inpFileName, "r") as f:
+    lines = f.readlines()
+  lines = [line.split("#", 1)[0] for line in lines]  # drop inline comments
+  text = "".join(lines)
+  data = json.loads(text)
+  return data
+
+def checkTrimArgs(data,mass_dict,materials_dict):
+  required_keys = ["material","ionSymbol","runMode","calcMode","nps","energy_keV","outputPath"]
+  #Check all top level keys are there
+  for key in required_keys:
+    if key not in data:
+      print(f"Error! Config missing required key: '{key}'")
+      sys.exit()
+
+  #Check material is valid
+  if not data["material"] in materials_dict:
+    print(f"Error! Material {data['material']} not supplied in materials_dict!")
+    print("Choices are:")
+    for key in materials_dict.keys():
+      print(f"\t{key}")
+    sys.exit()
   
-  if target_name == "LiF":
-    target_nElements = 2
-  elif target_name == "Olivine":
-    target_nElements = 4
-  elif target_name == "Diamond":
-    target_nElements = 1
-  target_nLayers = 1
-  target_start_offset = 0 #Angstroms
+  #Check ion is valid
+  if not data["ionSymbol"] in mass_dict:
+    print(f"Error! Ion {data['ionSymbol']} not valid!")
+    sys.exit()
 
-  #Note if you want the same element in different layers (i.e. LiF and LiOH layers in the same sim),
-  #you can optionally include it twice to track recoils separately and set separate displacement energies
-  if target_name=="LiF":
-    target_element_names = ["Li","F"]
-    target_element_Zs = [3,9]
-    target_element_masses = [6.941,18.998] #Natural abundances, atomic masses
-    target_element_TDEs = [25,25] #eV, displacement energy for each element.
-    target_element_LBEs = [3., 3.] #eV, lattice binding energies
-    target_element_SBEs = [1.67, 2] #eV, surface binding energies
-    layer_names = ["LiF"]
-    layer_densities  = [2.635] # g/cm^3]
-    #stoichs correspond to target_elements
-    layer_stoichs = [[0.5,0.5]]
-  elif target_name == "Olivine":
-    target_element_names = ["Fe","Mg","Si","O"]
-    target_element_Zs = [26,12,14,8]
-    target_element_masses = [55.845,24.305,28.085,15.999]
-    #From https://theses.hal.science/tel-01126887v1/file/2014PA112184.pdf
-    target_element_TDEs = [25,25,25,25] #eV, displacement energy for each element.
-    target_element_LBEs = [1.9,1.9,4,15.5] #eV, lattice binding energies
-    target_element_SBEs = [6.47,3.7,6.8,4.75] #eV, surface binding energies
-    layer_names = ["Olivine"]
-    #https://webmineral.com/data/Olivine.shtml
-    layer_densities  = [3.32] # g/cm^3
-    #stoichs correspond to target_elements
-    layer_stoichs = [[0.4,1.6,1.0,4.0]]
-  elif target_name == "Diamond":
-    target_element_names = ["C"]
-    target_element_Zs = [6]
-    target_element_masses = [12.01] #Natural abundances, atomic masses
-    target_element_TDEs = [31.] #eV, displacement energy for each element. From https://arxiv.org/pdf/2206.06772
-    target_element_LBEs = [3.] #eV, lattice binding energies. From https://www.sciencedirect.com/science/article/abs/pii/S0168583X21001890
-    target_element_SBEs = [7.4] #eV, surface binding energies. From https://www.sciencedirect.com/science/article/abs/pii/S0168583X21001890 
-    layer_names = ["Diamond"]
-    #https://webmineral.com/data/Olivine.shtml
-    layer_densities  = [3.51] # g/cm^3, from https://www.sciencedirect.com/science/article/abs/pii/S0168583X21001890 
-    #stoichs correspond to target_elements
-    layer_stoichs = [[1.0]]
+  #Check calc mode is valid
+  if not data["calcMode"] in ["quick","full"]:
+    print(f"Error! calcMode {data['calcMode']} not valid!")
+    print(f"Valid choices are: {['quick','full']}")
+    sys.exit()
+
+  #Check run mode is valid
+  if not data["runMode"] in ["damage","efficiency"]:
+    print(f"Error! runMode {data['runMode']} not valid!")
+    print(f"Valid choices are: {['damage','efficiency']}")
+    sys.exit()
+
+  #Create output path if needed
+  outdir = data["outputPath"]
+  os.makedirs(outdir, exist_ok=True)
+
+def makeTrimInputString(data,mass_dict,material_dict):
+  calcMode_str = data["calcMode"]
+  if calcMode_str == "full":
+    calcMode = 2
+  elif calcMode_str == "quick":
+    calcMode = 1
+
+  nps = data["nps"]
+  energy = data["energy_keV"]
+  ion_name = data["ionSymbol"]
+  target_name = data["material"]
+
+  Z = mass_dict[ion_name]["Z"]
+  mass = mass_dict[ion_name]["mass_amu"]
+  target_nElements = material_dict[target_name]["nElements"]
+  target_element_names = material_dict[target_name]["element_names"]
+  target_element_Zs = material_dict[target_name]["Zs"]
+  target_element_masses = material_dict[target_name]["element_masses"]
+  layer_names = [target_name]
+  layer_stoichs = material_dict[target_name]["stoichs"]
+  layer_densities = material_dict[target_name]["densities"]
+  target_element_TDEs = material_dict[target_name]["TDEs"]
+  target_element_LBEs = material_dict[target_name]["LBEs"]
+  target_element_SBEs = material_dict[target_name]["SBEs"]
+
+  target_nLayers = 1
+  target_start_offset = 0
 
   layer_depths = [20000000] #Angstroms. (2mm) - we want to be sure ions won't range out
   target_depth = sum(layer_depths)
@@ -124,7 +117,7 @@ def makeTrimInputString(energy,target_name,ion_name,nps):
   lines.append(ionLine)
 
   cascadeHeaderLine = "Cascades(1=No;2=Full;3=Sputt;4-5=Ions;6-7=Neutrons), Random Number Seed, Reminders"
-  cascadeLine = f"     {runMode}     0     0"
+  cascadeLine = f"     {calcMode}     0     0"
   lines.append(cascadeHeaderLine)
   lines.append(cascadeLine)
 
@@ -207,3 +200,71 @@ def makeTrimInputString(energy,target_name,ion_name,nps):
   lines.append(stoppingPowerHeaderline)
   lines.append(stoppingPowerLine)
   return lines
+
+def makeTempSRIMFolder(tag,tmp_path,srim_path):
+  unique_id = uuid.uuid4().hex[:8]
+  temp_workdir = os.path.join(tmp_path, f"{tag}_{unique_id}")
+  shutil.copytree(srim_path, temp_workdir)
+  return temp_workdir
+
+def runSRIM(srimFolder,input_data,mass_dict,materials_dict):
+  os.chdir(srimFolder)
+  lines = makeTrimInputString(input_data, mass_dict, materials_dict)
+  with open(os.path.join(srimFolder, "TRIM.in"), "w", encoding="utf-8", newline="\n") as f:
+    for line in lines:
+      if not line.endswith("\n"):
+        line += "\n"
+      f.write(line)
+
+  exit_code = os.system("TRIM.exe")
+  if exit_code != 0:
+    raise RuntimeError(f"TRIM.exe failed with exit_code={exit_code}")
+
+  collison_path = os.path.join(srimFolder, "SRIM Outputs", "COLLISON.txt")
+  if not os.path.exists(collison_path):
+    raise RuntimeError("TRIM completed but COLLISON.txt not found")
+
+  return collison_path
+
+def createMaterialsDict():
+  materials_dict = {}
+  #LiF
+  materials_dict["LiF"] = {
+    "nElements": 2,
+    "element_names": ["Li","F"],
+    "element_masses": [6.941,18.998], #Natural abundances, atomic masses
+    "Zs": [3,9],
+    #From TRIM Compound Library
+    "TDEs": [25.,25.],
+    "LBEs": [3.,3.],
+    "SBEs": [1.67,2.],
+    "densities": [2.635],
+    "stoichs": [[0.5,0.5]]}
+  #Olivine - (Fe0.4Mg1.6)SiO4
+  materials_dict["Olivine"] = {
+    "nElements": 4,
+    "element_names": ["Fe","Mg","Si","O"],
+    "element_masses": [55.845,24.305,28.085,15.999], #Natural abundances, atomic masses
+    "Zs": [26,12,14,8],
+    #From https://theses.hal.science/tel-01126887v1/file/2014PA112184.pdf
+    "TDEs": [25,25,25,25], #eV, displacement energy for each element.
+    "LBEs": [1.9,1.9,4,15.5], #eV, lattice binding energies
+    "SBEs": [6.47,3.7,6.8,4.75], #eV, surface binding energies
+    #https://webmineral.com/data/Olivine.shtml
+    "densities": [3.32],
+    #stoichs correspond to target_elements
+    "stoichs": [[0.4,1.6,1.0,4.0]]}
+  #Diamond
+  materials_dict["Diamond"] = {
+    "nElements": 1,
+    "element_names": ["C"],
+    "element_masses": [12.01], #Natural abundances, atomic masses
+    "Zs": [6],
+    "TDEs": [31.], #eV, displacement energy for each element. From https://arxiv.org/pdf/2206.06772
+    "LBEs": [3.], #eV, lattice binding energies. From https://www.sciencedirect.com/science/article/abs/pii/S0168583X21001890
+    "SBEs": [7.4], #eV, surface binding energies. From https://www.sciencedirect.com/science/article/abs/pii/S0168583X21001890
+    #https://www.sciencedirect.com/science/article/abs/pii/S0168583X21001890 
+    "densities": [3.51],
+    #stoichs correspond to target_elements
+    "stoichs": [[1.0]]}
+  return materials_dict
