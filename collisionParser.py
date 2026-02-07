@@ -21,14 +21,18 @@ def main():
   ################
   #Only save recoils with energies in this range. In general you should start your TRIM run at least a few hundred keV
   #above the max range to allow for 'burn in'
-  energyRange_eV = [71e3,73e3] 
+  energyRange_eV = [20,500e3] 
 
   #We impose artificial limits in the number of recoils we store within given energy ranges. This keeps us from
   #being overwhelmed by low-energy recoils
-  binSize_eV = 1
-  maxEntriesPerBin = 10
+  spacing = "log"
+  if spacing == "linear":
+    binSize_eV = 1
+  else:
+    nBins = 1000
+  maxEntriesPerBin = 100
 
-  maxThrowsToProcessAtOnce=2500 #Reduce to decrease ram usage, only relevant for 'full' mode
+  maxThrowsToProcessAtOnce=100 #Reduce to decrease ram usage, only relevant for 'full' mode. ~1000 for light ions, 100 for medium ions
 
   #################
   ##INPUT PARSING##
@@ -53,7 +57,6 @@ def main():
     outputFileType = "h5"
   else:
     print(f"Error! Acceptable output file types are .root or .h5.\nYou passed in {outputFileName}!\n")
-
   #Get base path of output name, make if doesn't exist
   outDir = os.path.dirname(os.path.abspath(outputFileName))
   if outDir and not os.path.isdir(outDir):
@@ -119,7 +122,11 @@ def main():
   #######################################
   ##PARSE, PROCESS, AND WRITE IN CHUNKS##
   #######################################
-  bin_edges = np.arange(energyRange_eV[0], energyRange_eV[1] + binSize_eV, binSize_eV)
+  if spacing=="linear":
+    bin_edges = np.arange(energyRange_eV[0], energyRange_eV[1] + binSize_eV, binSize_eV)
+  else:
+    bin_edges = np.logspace(np.log10(energyRange_eV[0]), np.log10(energyRange_eV[1]), nBins + 1)
+
   counts_per_bin = np.zeros(len(bin_edges) - 1)
   EOF = False
   nThrows=0
@@ -178,7 +185,11 @@ def main():
           events.extend(df.to_dict("records"))
       parserUtils.fillh5(branches, events, bin_edges, counts_per_bin, maxEntriesPerBin) 
 
-  print(f"Output contains {int(np.sum(counts_per_bin))} out of max of {int((energyRange_eV[1]-energyRange_eV[0])/binSize_eV*maxEntriesPerBin)} events\n")
+  if spacing=="linear":
+    print(f"Output contains {int(np.sum(counts_per_bin))} out of max of {int((energyRange_eV[1]-energyRange_eV[0])/binSize_eV*maxEntriesPerBin)} events\n")
+  else:    
+    print(f"Output contains {int(np.sum(counts_per_bin))} out of max of {int(nBins*maxEntriesPerBin)} events\n")
+
 
   inpFile.close()
 
