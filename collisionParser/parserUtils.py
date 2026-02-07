@@ -156,7 +156,7 @@ def processThrow(primaries_df,cascades_df,initialEnergy_eV,bin_edges,counts_per_
           vxs[i] = vxs[i-1]
           vys[i] = vys[i-1]
           vzs[i] = vzs[i-1]
-        else:
+        else: #Shouldn't ever happen, but if the first primary interaction is at (0,0,0) assign the default SRIM direction of (+1,0,0)
           vxs[i] = 1.
           vys[i] = 0.
           vzs[i] = 0.
@@ -189,15 +189,22 @@ def processThrow(primaries_df,cascades_df,initialEnergy_eV,bin_edges,counts_per_
     if not np.any(mask):
       continue
 
+    #Compute rotation matrix to align the new lower energy primary in the +X direction
+    R = compute_rotation_matrix(primaries_vxs[i],primaries_vys[i],primaries_vzs[i])
+
     #Get flat arrays of cascade positions, offset them so they start at 0,0,0
     xs = cascade_xs_nm[mask] - primaries_start_xs_nm[i]
     ys = cascade_ys_nm[mask] - primaries_start_ys_nm[i]
     zs = cascade_zs_nm[mask] - primaries_start_zs_nm[i]
-    #Compute rotation matrix to align these with the +X axis
-    R = compute_rotation_matrix(primaries_vxs[i],primaries_vys[i],primaries_vzs[i])
-
     #Rotate all the cascades so they correspond to the +X axis
     rotate_points_inplace(xs, ys, zs, R)
+
+    #Get the PKA endpoint - we reset each time because we are rotating in-place
+    pka_end_x = np.array([primaries_xs_nm[-1] - primaries_start_xs_nm[i]])
+    pka_end_y = np.array([primaries_ys_nm[-1] - primaries_start_ys_nm[i]])
+    pka_end_z = np.array([primaries_zs_nm[-1] - primaries_start_zs_nm[i]])
+    #Rotate the pka endpoint
+    rotate_points_inplace(pka_end_x, pka_end_y, pka_end_z, R)
 
     #Get energies, nums
     recoil_energies = cascade_recoilEnergy_eV[mask]
@@ -208,6 +215,9 @@ def processThrow(primaries_df,cascades_df,initialEnergy_eV,bin_edges,counts_per_
     outputEvents.append({
       "primaryIndex": i,
       "energy_eV": primaryEnergy_eV,
+      "pka_endpoint_x": pka_end_x[0],
+      "pka_endpoint_y": pka_end_y[0],
+      "pka_endpoint_z": pka_end_z[0],
       "xs_nm": xs.tolist(),
       "ys_nm": ys.tolist(),
       "zs_nm": zs.tolist(),
@@ -243,9 +253,7 @@ def processFastThrow(primaries_df,initialEnergy_eV,minEnergy,maxEnergy):
   primaries_ys_nm = primaries_df["y_A"].to_numpy(copy=False)*0.1
   primaries_zs_nm = primaries_df["z_A"].to_numpy(copy=False)*0.1
   primaries_nVacs = primaries_df["nVacs"].to_numpy(copy=False)
-  primaries_df["atom_Z"] = primaries_df["atom_hit"].map(sym_to_Z).astype(np.uint8)
-  primaries_atomHit = primaries_df["atom_Z"].to_numpy(copy=False)
-  
+  primaries_atomHit = primaries_df["atom_hit"].map(sym_to_Z).to_numpy(dtype=np.uint8, copy=False)
 
   #Get the start positions of what will become each of our new primaries. Assume the first starts at (0,0,0), and each 
   #subsequent primary starts at the collision site of the previous primary
@@ -309,6 +317,10 @@ def processFastThrow(primaries_df,initialEnergy_eV,minEnergy,maxEnergy):
     #Rotate all the cascades so they correspond to the +X axis
     rotate_points_inplace(xs, ys, zs, R)
 
+    pka_end_x = xs[-1]
+    pka_end_y = ys[-1]
+    pka_end_z = zs[-1]
+
     #Get energies, nums
     recoil_energies = primaries_recoilEnergy_eV[i:]
     recoil_nums = np.array([j-i for j in range(i,len(primaries_df))])
@@ -318,6 +330,9 @@ def processFastThrow(primaries_df,initialEnergy_eV,minEnergy,maxEnergy):
     outputEvents.append({
       "primaryIndex": i,
       "energy_eV": primaryEnergy_eV,
+      "pka_endpoint_x": pka_end_x,
+      "pka_endpoint_y": pka_end_y,
+      "pka_endpoint_z": pka_end_z,
       "xs_nm": xs.tolist(),
       "ys_nm": ys.tolist(),
       "zs_nm": zs.tolist(),
@@ -395,7 +410,7 @@ def rotate_points_inplace(x, y, z, R):
     z[i] = R[2, 0]*xi + R[2, 1]*yi + R[2, 2]*zi
 
 def fillTree(tree,branches,output,bin_edges,counts_per_bin,maxEntriesPerBin):
-  ionEnergy_eV, xs, ys, zs, nVacs, displacedZs, recoilEnergies_eV, recoilNums = branches
+  ionEnergy_eV, pka_end_x, pka_end_y, pka_end_z, xs, ys, zs, nVacs, displacedZs, recoilEnergies_eV, recoilNums = branches
 
   def clear_vectors():
     xs.clear()
@@ -411,7 +426,7 @@ def fillTree(tree,branches,output,bin_edges,counts_per_bin,maxEntriesPerBin):
       continue
 
     for row in df.itertuples(index=False):
-      ionEnergy_eV[0] = int(row.energy_eV)
+      ionEnergy_eV[0] = float(row.energy_eV)
 
       bin_idx = np.searchsorted(bin_edges, ionEnergy_eV[0], side="right") - 1
       if bin_idx < 0 or bin_idx >= (len(bin_edges) - 1):
@@ -419,6 +434,10 @@ def fillTree(tree,branches,output,bin_edges,counts_per_bin,maxEntriesPerBin):
       if counts_per_bin[bin_idx] >= maxEntriesPerBin:
         continue
 
+      pka_end_x[0] = float(row.pka_endpoint_x)
+      pka_end_y[0] = float(row.pka_endpoint_y)
+      pka_end_z[0] = float(row.pka_endpoint_z)
+      
       clear_vectors()
 
       # positions
@@ -443,7 +462,7 @@ def fillTree(tree,branches,output,bin_edges,counts_per_bin,maxEntriesPerBin):
       tree.Fill()
 
 def fillh5(dsets, events, bin_edges, counts_per_bin, maxEntriesPerBin):
-  d_ionE, d_xs, d_ys, d_zs, d_nv, d_disZ, d_recoilE, d_recoilNums = dsets
+  d_ionE, d_pka_end_x, d_pka_end_y, d_pka_end_z, d_xs, d_ys, d_zs, d_nv, d_disZ, d_recoilE, d_recoilNums = dsets
 
   to_write = []
   for ev in events:
@@ -464,6 +483,9 @@ def fillh5(dsets, events, bin_edges, counts_per_bin, maxEntriesPerBin):
   num_events_total = old_num_events + num_new_events
 
   d_ionE.resize((num_events_total,))
+  d_pka_end_x.resize((num_events_total,))
+  d_pka_end_y.resize((num_events_total,))
+  d_pka_end_z.resize((num_events_total,))
   d_xs.resize((num_events_total,))
   d_ys.resize((num_events_total,))
   d_zs.resize((num_events_total,))
@@ -475,6 +497,9 @@ def fillh5(dsets, events, bin_edges, counts_per_bin, maxEntriesPerBin):
   j = old_num_events
   for E, ev in to_write:
     d_ionE[j] = np.float32(E)
+    d_pka_end_x[j] = np.float(ev["pka_endpoint_x"])
+    d_pka_end_y[j] = np.float(ev["pka_endpoint_y"])
+    d_pka_end_z[j] = np.float(ev["pka_endpoint_z"])
     d_xs[j] = np.asarray(ev["xs_nm"], dtype=np.float32)
     d_ys[j] = np.asarray(ev["ys_nm"], dtype=np.float32)
     d_zs[j] = np.asarray(ev["zs_nm"], dtype=np.float32)
