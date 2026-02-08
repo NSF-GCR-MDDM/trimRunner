@@ -202,13 +202,37 @@ def makeTrimInputString(data,mass_dict,material_dict):
   return lines
 
 def makeTempSRIMFolder(tag,tmp_path,srim_path):
+  
+  srim_path = os.path.abspath(os.path.normpath(srim_path))
+  tmp_path = os.path.abspath(os.path.normpath(tmp_path))
+
+  print("SRIM_EXE_PATH:", srim_path)
+  print("SRIM_EXE_PATH isdir:", os.path.isdir(srim_path))
+  print("SRIM_EXE_PATH contents count:", len(os.listdir(srim_path)))
+  
   unique_id = uuid.uuid4().hex[:8]
   temp_workdir = os.path.join(tmp_path, f"{tag}_{unique_id}")
-  shutil.copytree(srim_path, temp_workdir)
+  temp_workdir = os.path.abspath(os.path.normpath(temp_workdir))
+  print("TEMP_WORKDIR:", temp_workdir)
+
+  # Ensure destination does NOT exist. If it does, delete it.
+  if os.path.exists(temp_workdir):
+    shutil.rmtree(temp_workdir)
+
+  # Do not swallow errors. Let it crash with a traceback if it fails.
+  shutil.copytree(srim_path, temp_workdir, dirs_exist_ok=False)
+
+  print("TEMP_WORKDIR contents count:", len(os.listdir(temp_workdir)))
+  print("TEMP_WORKDIR first entries:", os.listdir(temp_workdir)[:20])
+
+  import subprocess
+  subprocess.run(["explorer", os.path.abspath(temp_workdir)])
+
   return temp_workdir
 
 def runSRIM(srimFolder,input_data,mass_dict,materials_dict):
   os.chdir(srimFolder)
+  print(srimFolder)
   lines = makeTrimInputString(input_data, mass_dict, materials_dict)
   with open(os.path.join(srimFolder, "TRIM.in"), "w", encoding="utf-8", newline="\n") as f:
     for line in lines:
@@ -216,6 +240,7 @@ def runSRIM(srimFolder,input_data,mass_dict,materials_dict):
         line += "\n"
       f.write(line)
 
+  sys.exit()
   exit_code = os.system("TRIM.exe")
   if exit_code != 0:
     raise RuntimeError(f"TRIM.exe failed with exit_code={exit_code}")
