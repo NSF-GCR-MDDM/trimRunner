@@ -1,9 +1,9 @@
 {
     "material":"Olivine",
     "ionSymbol":"234Th",
-    "outputPath":"C:/Users/Sam/Documents/code/trimRunner/dat/Olivine/txt/",
+    "outputPath":"C:/Users/Sam/Documents/code/trimRunner/data/Olivine/txt/",
     "runMode":"damage",
     "calcMode":"full",
     "energy_keV":500,
-    "nps":50000
+    "nps":5
 }

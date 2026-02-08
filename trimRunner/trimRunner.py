@@ -90,4 +90,5 @@ try:
         line=f"{energies[i]:.4f},{output_efficiencies[i]:.5f}\n"
         outFile.write(line)
 finally:
+  os.chdir(SRIM_TMP_PATH)
   shutil.rmtree(runFolder, ignore_errors=True)
