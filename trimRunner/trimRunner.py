@@ -52,7 +52,7 @@ try:
     # Create .tar.gz
     with tarfile.open(tar_path, "w:gz") as tar:
       tar.add(txt_path, arcname=os.path.basename(txt_path))
-      tar.close()
+    os.remove(txt_path)
 
   elif runMode=="efficiency":
     csv_path = os.path.join(outputFolder, f"{output_base_name}.csv")
