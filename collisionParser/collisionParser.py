@@ -21,16 +21,19 @@ def main():
   ################
   #Only save recoils with energies in this range. In general you should start your TRIM run at least a few hundred keV
   #above the max range to allow for 'burn in'
-  energyRange_eV = [20,500e3] 
+  energyRange_eV = [1,600e3] 
+  #[3.7e7,9e6] #for alphas
 
   #We impose artificial limits in the number of recoils we store within given energy ranges. This keeps us from
   #being overwhelmed by low-energy recoils
   spacing = "log"
   nBins = 1000
+  #nBins = 5300 #for alphas
   maxEntriesPerBin = 100
 
   #RAM/CPU settings
-  maxThrowsToProcessAtOnce=2000 #Reduce to decrease ram usage, only relevant for 'full' mode. Recommend starting at 100 and tuning
+  maxThrowsToProcessAtOnce=200 #Reduce to decrease ram usage, only relevant for 'full' mode. Recommend starting at 100 and tuning
+  #maxThrowstoProcessAtOnce = 1000 #for alphas
   nCores = 8
 
   #################
@@ -106,7 +109,6 @@ def main():
   else:
     outputFile = h5py.File(outputFileName, "w")
 
-    # vlen types (now floats for nVacs and recoilEnergies per your change)
     dt_float = h5py.vlen_dtype(np.float32)
     dt_uint8 = h5py.vlen_dtype(np.uint8)
     dt_int16 = h5py.vlen_dtype(np.int16)

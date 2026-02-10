@@ -496,10 +496,10 @@ def fillh5(dsets, events, bin_edges, counts_per_bin, maxEntriesPerBin):
 
   j = old_num_events
   for E, ev in to_write:
-    d_ionE[j] = np.float32(E)
-    d_pka_end_x[j] = np.float(ev["pka_endpoint_x"])
-    d_pka_end_y[j] = np.float(ev["pka_endpoint_y"])
-    d_pka_end_z[j] = np.float(ev["pka_endpoint_z"])
+    d_ionE[j] = float(E)
+    d_pka_end_x[j] = float(ev["pka_endpoint_x"])
+    d_pka_end_y[j] = float(ev["pka_endpoint_y"])
+    d_pka_end_z[j] = float(ev["pka_endpoint_z"])
     d_xs[j] = np.asarray(ev["xs_nm"], dtype=np.float32)
     d_ys[j] = np.asarray(ev["ys_nm"], dtype=np.float32)
     d_zs[j] = np.asarray(ev["zs_nm"], dtype=np.float32)
