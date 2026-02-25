@@ -2,6 +2,7 @@ import pandas as pd
 import numba
 import numpy as np
 import io
+from typing import NamedTuple
 
 def getInitialEnergy(inpFile):
   for line in inpFile:
@@ -11,18 +12,50 @@ def getInitialEnergy(inpFile):
       throwEnergy_eV = float(line[start:end].strip())*1e3
       return throwEnergy_eV
 
-def read_csv(inpFile,maxThrowsToProcessAtOnce):
-  nThrowsRead=0
+PRIMARY_DTYPE = np.dtype([
+  ("ionNum", "i4"),
+  ("energy_eV", "f4"),
+  ("x_nm", "f4"),
+  ("y_nm", "f4"),
+  ("z_nm", "f4"),
+  ("recoilEnergy_eV", "f4")
+])
+
+CASCADE_DTYPE = np.dtype([
+  ("cascadeNum", "i4"),
+  ("atom", "i4"),
+  ("recoilEnergy_eV", "f4"),
+  ("x_nm", "f4"),
+  ("y_nm", "f4"),
+  ("z_nm", "f4"),
+  ("nVacs", "f4")
+])
+
+class Event(NamedTuple):
+  energy_eV: np.float32
+  pka_endpoint_x: np.float32
+  pka_endpoint_y: np.float32
+  pka_endpoint_z: np.float32
+  xs_nm: np.ndarray        
+  ys_nm: np.ndarray         
+  zs_nm: np.ndarray        
+  nVacs: np.ndarray         
+  displacedAtoms_Z: np.ndarray  
+  recoilEnergies_eV: np.ndarray  
+  recoilNums: np.ndarray 
+
+def read_throw_from_csv(inpFile):
   cascadeNum=0
   lookingForRecoils=False
-  primeRecoils = []
-  cascades = []
+  primaries_steps_list = []
+  cascades_list = []
+  nThrows = 0
 
   while True:
     line = inpFile.readline()
     #Check for EOF
     if line == "":
-      break
+      return np.array([]),np.array([]),True
     #Skip comments
     if line.startswith("==") or line.startswith("--"):
       continue
@@ -32,14 +65,14 @@ def read_csv(inpFile,maxThrowsToProcessAtOnce):
     #One step of the primary recoil
     if "Start of New Cascade" in line:
       lineParts = line.split()      
-      primeRecoils.append({
-        "ionNum":int(lineParts[0]),
-        "energy_eV":float(lineParts[1])*1000,
-        "x_nm":float(lineParts[2])*0.1,
-        "y_nm":float(lineParts[3])*0.1,
-        "z_nm":float(lineParts[4])*0.1,
-        "recoilEnergy_eV":float(lineParts[7])
-      })
+      primaries_steps_list.append((
+        int(lineParts[0]), #ionNum
+        float(lineParts[1])*1000, #energy_eV
+        float(lineParts[2])*0.1, #x_nm
+        float(lineParts[3])*0.1, #y_nm
+        float(lineParts[4])*0.1, #z_nm
+        float(lineParts[7]) #recoilEnergy_eV
+      ))
     #Start of a cascade
     elif "Prime Recoil" in line:
       lookingForRecoils=True
@@ -49,89 +82,104 @@ def read_csv(inpFile,maxThrowsToProcessAtOnce):
       lookingForRecoils=False
     #End of a throw
     elif "For Ion" in line:
-      cascadeNum=0
-      nThrowsRead+=1
-      if nThrowsRead==maxThrowsToProcessAtOnce:
-        #Convert to data frame
-        primeRecoils_df = pd.DataFrame(primeRecoils)
-        cascades_df = pd.DataFrame(cascades)
-        return primeRecoils_df,cascades_df,False
+      return np.array(primaries_steps_list, dtype=PRIMARY_DTYPE), np.array(cascades_list, dtype=CASCADE_DTYPE),False
 
     #Parse cascades if this is in a cascades line
     if lookingForRecoils==True:
       lineParts = line.split()
       nVacs = int(lineParts[6])
       nReps = int(lineParts[7])
-      if nVacs > 0 and nReps==0:
-        cascades.append({
-          "ionNum":primeRecoils[-1]["ionNum"],
-          "cascadeNum":cascadeNum,
-          "atom": int(lineParts[1]),
-          "recoilEnergy_eV": float(lineParts[2]),
-          "x_nm": float(lineParts[3])*0.1,
-          "y_nm": float(lineParts[4])*0.1,
-          "z_nm": float(lineParts[5])*0.1,
-          "nVacs": int(lineParts[6])
-        })
+      if nVacs==1 and nReps==0: #In full cascade mode, nVacs is always 0 or 1. nReps is always 0 or 1.
+        cascades_list.append((
+         cascadeNum, #cascadeNum
+         int(lineParts[1]), #atom, Z of the displaced atom
+         float(lineParts[2]), #recoilEnergy_eV
+         float(lineParts[3])*0.1, #x_nm
+         float(lineParts[4])*0.1, #y_nm
+         float(lineParts[5])*0.1, #z_nm
+         1.0 #nVacs
+        ))
 
-  #Parse final chunk
-  primeRecoils_df = pd.DataFrame(primeRecoils)
-  cascades_df = pd.DataFrame(cascades)
-  return primeRecoils_df,cascades_df,True
+sym_to_Z = {
+  "H": 1, "He": 2, "Li": 3, "Be": 4, "B": 5, "C": 6, "N": 7, "O": 8, "F": 9, "Ne": 10,
+  "Na": 11, "Mg": 12, "Al": 13, "Si": 14, "P": 15, "S": 16, "Cl": 17, "Ar": 18, "K": 19, "Ca": 20,
+  "Sc": 21, "Ti": 22, "V": 23, "Cr": 24, "Mn": 25, "Fe": 26, "Co": 27, "Ni": 28, "Cu": 29, "Zn": 30,
+  "Ga": 31, "Ge": 32, "As": 33, "Se": 34, "Br": 35, "Kr": 36, "Rb": 37, "Sr": 38, "Y": 39, "Zr": 40,
+  "Nb": 41, "Mo": 42, "Tc": 43, "Ru": 44, "Rh": 45, "Pd": 46, "Ag": 47, "Cd": 48, "In": 49, "Sn": 50,
+  "Sb": 51, "Te": 52, "I": 53, "Xe": 54, "Cs": 55, "Ba": 56, "La": 57, "Ce": 58, "Pr": 59, "Nd": 60,
+  "Pm": 61, "Sm": 62, "Eu": 63, "Gd": 64, "Tb": 65, "Dy": 66, "Ho": 67, "Er": 68, "Tm": 69, "Yb": 70,
+  "Lu": 71, "Hf": 72, "Ta": 73, "W": 74, "Re": 75, "Os": 76, "Ir": 77, "Pt": 78, "Au": 79, "Hg": 80,
+  "Tl": 81, "Pb": 82, "Bi": 83, "Po": 84, "At": 85, "Rn": 86, "Fr": 87, "Ra": 88, "Ac": 89, "Th": 90,
+  "Pa": 91, "U": 92, "Np": 93, "Pu": 94, "Am": 95, "Cm": 96, "Bk": 97, "Cf": 98, "Es": 99, "Fm": 100,
+}
 
-def read_csv_fast_mode(inpFile):
-  nIons=0
-  startedEvents = False
-  output = "ionNum energy_keV x_A y_A z_A Se atom_hit recoilEnergy_eV nVacs nReps nInters\n"
-  ignore_keys = ["Displacement","Replacements","Vacancies","Interstitials","Sputtered","Transmitted","Ion","Num"]
+def read_throw_from_csv_fast(inpFile):
+  primaries_steps_list = []
+  cascades_list = []
+  lookingForRecoils = False
+  cascadeNum = 0
   while True:
     line = inpFile.readline()
     #Check for EOF
     if line == "":
-      break
+      return np.array([]),np.array([]),True
+    
     #Skip comments
     if line.startswith("==") or line.startswith("--"):
       continue
     #Skip header
     if "REPLAC INTER" in line:
-      startedEvents=True
-      nIons+=1
-      if nIons%1000==0:
-        print(nIons)
+      lookingForRecoils=True
       continue
+    if "For Ion" in line:
+      return np.array(primaries_steps_list,dtype=PRIMARY_DTYPE),np.array(cascades_list,dtype=CASCADE_DTYPE),False
 
-    if startedEvents==True:
-      if any(k in line for k in ignore_keys):
-        continue
-
+    if lookingForRecoils==True:
       #Replace weird chars
       line = line.replace("�"," ")
+      lineParts = line.split()      
+      cascadeNum+=1
+      primaries_steps_list.append((
+        int(lineParts[0]), #ionNum
+        float(lineParts[1])*1000, #energy_eV
+        float(lineParts[2])*0.1, #x_nm
+        float(lineParts[3])*0.1, #y_nm
+        float(lineParts[4])*0.1, #z_nm
+        float(lineParts[7]) #recoilEnergy_eV
+      ))
+      cascades_list.append((
+         cascadeNum, #cascadeNum
+         int(sym_to_Z[lineParts[6]]), #atom, Z of the displaced atom
+         float(lineParts[7]), #recoilEnergy_eV
+         float(lineParts[3])*0.1, #x_nm
+         float(lineParts[4])*0.1, #y_nm
+         float(lineParts[5])*0.1, #z_nm
+         float(lineParts[8])
+      ))
 
-      output+=line
-      
-  df = pd.read_csv(io.StringIO(output), sep=r"\s+",usecols=["ionNum", "energy_keV", "x_A", "y_A", "z_A", "atom_hit", "recoilEnergy_eV", "nVacs"])
-  return df
+def processThrow(args):
 
-def processThrow(primaries_df,cascades_df,initialEnergy_eV,bin_edges,counts_per_bin,maxEntriesPerBin):
+  primary_steps_arr, cascades_arr, initialEnergy_eV = args
   outputEvents = []
 
-  #Get primaries columns
-  primaries_energy_eV = primaries_df["energy_eV"].to_numpy(copy=False)
-  primaries_recoilEnergy_eV = primaries_df["recoilEnergy_eV"].to_numpy(copy=False)
-  primaries_xs_nm = primaries_df["x_nm"].to_numpy(copy=False)
-  primaries_ys_nm = primaries_df["y_nm"].to_numpy(copy=False)
-  primaries_zs_nm = primaries_df["z_nm"].to_numpy(copy=False)
+  #Get primary steps
+  primaries_energy_eV = primary_steps_arr["energy_eV"]
+  primaries_recoilEnergy_eV = primary_steps_arr["recoilEnergy_eV"]
+  primaries_xs_nm = primary_steps_arr["x_nm"]
+  primaries_ys_nm = primary_steps_arr["y_nm"]
+  primaries_zs_nm = primary_steps_arr["z_nm"]
 
-  cascade_nums = cascades_df["cascadeNum"].to_numpy(copy=False)
-  cascades_atoms = cascades_df["atom"].to_numpy(copy=False)
-  cascade_xs_nm = cascades_df["x_nm"].to_numpy(copy=False)
-  cascade_ys_nm = cascades_df["y_nm"].to_numpy(copy=False)
-  cascade_zs_nm = cascades_df["z_nm"].to_numpy(copy=False)
-  cascade_nVacs = cascades_df["nVacs"].to_numpy(copy=False)
-  cascade_recoilEnergy_eV = cascades_df["recoilEnergy_eV"].to_numpy(copy=False)
+  #Get cascades
+  cascade_nums = cascades_arr["cascadeNum"]
+  cascades_atoms = cascades_arr["atom"]
+  cascade_xs_nm = cascades_arr["x_nm"]
+  cascade_ys_nm = cascades_arr["y_nm"]
+  cascade_zs_nm = cascades_arr["z_nm"]
+  cascade_nVacs = cascades_arr["nVacs"]
+  cascade_recoilEnergy_eV = cascades_arr["recoilEnergy_eV"]
 
   #Get the start positions of what will become each of our new primaries. Assume the first starts at (0,0,0), and each 
-  #subsequent primary starts at the collision site of the previous primary
+  #subsequent primary starts at the collision site of the previous primary step
   primaries_start_xs_nm = np.empty_like(primaries_xs_nm)
   primaries_start_ys_nm = np.empty_like(primaries_ys_nm)
   primaries_start_zs_nm = np.empty_like(primaries_zs_nm)
@@ -139,7 +187,7 @@ def processThrow(primaries_df,cascades_df,initialEnergy_eV,bin_edges,counts_per_
   primaries_start_ys_nm[0] = 0.0
   primaries_start_zs_nm[0] = 0.0
   if primaries_start_xs_nm.size > 1:
-    primaries_start_xs_nm[1:] = primaries_xs_nm[:-1]
+    primaries_start_xs_nm[1:] = primaries_xs_nm[:-1] 
     primaries_start_ys_nm[1:] = primaries_ys_nm[:-1]
     primaries_start_zs_nm[1:] = primaries_zs_nm[:-1]
   
@@ -175,15 +223,7 @@ def processThrow(primaries_df,cascades_df,initialEnergy_eV,bin_edges,counts_per_
 
   #Now step through primaries. Check if we should process it (ie is the bin already full we skip, or if the primary energy is
   #outside of our bin edges, skip). 
-  for i in range(0,len(primaries_df)):
-    #Check if this primary is out of bounds or the bin is already filled
-    primaryEnergy_eV = float(primaries_startEnergy_eV[i])
-    bin_idx = np.searchsorted(bin_edges, primaryEnergy_eV, side="right") - 1
-    if bin_idx < 0 or bin_idx >= (len(bin_edges) - 1):
-      continue
-    if counts_per_bin[bin_idx] >= maxEntriesPerBin:
-      continue
-    
+  for i in range(0,primary_steps_arr.shape[0]):
     #Get all downstream cascades from this recoil. If there are none, skip it
     mask = (cascade_nums >= (i + 1))
     if not np.any(mask):
@@ -196,52 +236,47 @@ def processThrow(primaries_df,cascades_df,initialEnergy_eV,bin_edges,counts_per_
     xs = cascade_xs_nm[mask] - primaries_start_xs_nm[i]
     ys = cascade_ys_nm[mask] - primaries_start_ys_nm[i]
     zs = cascade_zs_nm[mask] - primaries_start_zs_nm[i]
-    #Rotate all the cascades so they correspond to the +X axis
+    #Rotate all the cascades so they correspond to the primary headed along the +X axis
     rotate_points_inplace(xs, ys, zs, R)
 
     #Get the PKA endpoint - we reset each time because we are rotating in-place
     pka_end_x = np.array([primaries_xs_nm[-1] - primaries_start_xs_nm[i]])
     pka_end_y = np.array([primaries_ys_nm[-1] - primaries_start_ys_nm[i]])
     pka_end_z = np.array([primaries_zs_nm[-1] - primaries_start_zs_nm[i]])
-    #Rotate the pka endpoint
+    #Rotate the pka endpoint so it corresponds to the primaries heading down the +X axis
     rotate_points_inplace(pka_end_x, pka_end_y, pka_end_z, R)
 
     #Get energies, nums
     recoil_energies = cascade_recoilEnergy_eV[mask]
     recoil_nums = cascade_nums[mask] - 1 - i
+    recoil_atoms = cascades_atoms[mask]    
     recoil_nVacs = cascade_nVacs[mask]
-    recoil_atoms = cascades_atoms[mask]
 
-    outputEvents.append({
-      "primaryIndex": i,
-      "energy_eV": primaryEnergy_eV,
-      "pka_endpoint_x": pka_end_x[0],
-      "pka_endpoint_y": pka_end_y[0],
-      "pka_endpoint_z": pka_end_z[0],
-      "xs_nm": xs.tolist(),
-      "ys_nm": ys.tolist(),
-      "zs_nm": zs.tolist(),
-      "nVacs": recoil_nVacs.tolist(),
-      "displacedAtoms_Z": recoil_atoms.tolist(),
-      "recoilEnergies_eV": recoil_energies.tolist(),
-      "recoilNums": recoil_nums.tolist()
-    })
+    xs = xs.astype(np.float32, copy=False)
+    ys = ys.astype(np.float32, copy=False)
+    zs = zs.astype(np.float32, copy=False)
 
-  #convert to dataframe
-  return pd.DataFrame(outputEvents)
+    recoil_energies = recoil_energies.astype(np.float32, copy=False)
+    recoil_nums = recoil_nums.astype(np.int16, copy=False)
+    recoil_atoms = recoil_atoms.astype(np.uint8, copy=False)
+    recoil_nVacs = recoil_nVacs.astype(np.float32, copy=False)
 
-sym_to_Z = {
-  "H": 1, "He": 2, "Li": 3, "Be": 4, "B": 5, "C": 6, "N": 7, "O": 8, "F": 9, "Ne": 10,
-  "Na": 11, "Mg": 12, "Al": 13, "Si": 14, "P": 15, "S": 16, "Cl": 17, "Ar": 18, "K": 19, "Ca": 20,
-  "Sc": 21, "Ti": 22, "V": 23, "Cr": 24, "Mn": 25, "Fe": 26, "Co": 27, "Ni": 28, "Cu": 29, "Zn": 30,
-  "Ga": 31, "Ge": 32, "As": 33, "Se": 34, "Br": 35, "Kr": 36, "Rb": 37, "Sr": 38, "Y": 39, "Zr": 40,
-  "Nb": 41, "Mo": 42, "Tc": 43, "Ru": 44, "Rh": 45, "Pd": 46, "Ag": 47, "Cd": 48, "In": 49, "Sn": 50,
-  "Sb": 51, "Te": 52, "I": 53, "Xe": 54, "Cs": 55, "Ba": 56, "La": 57, "Ce": 58, "Pr": 59, "Nd": 60,
-  "Pm": 61, "Sm": 62, "Eu": 63, "Gd": 64, "Tb": 65, "Dy": 66, "Ho": 67, "Er": 68, "Tm": 69, "Yb": 70,
-  "Lu": 71, "Hf": 72, "Ta": 73, "W": 74, "Re": 75, "Os": 76, "Ir": 77, "Pt": 78, "Au": 79, "Hg": 80,
-  "Tl": 81, "Pb": 82, "Bi": 83, "Po": 84, "At": 85, "Rn": 86, "Fr": 87, "Ra": 88, "Ac": 89, "Th": 90,
-  "Pa": 91, "U": 92, "Np": 93, "Pu": 94, "Am": 95, "Cm": 96, "Bk": 97, "Cf": 98, "Es": 99, "Fm": 100,
-}
+    outputEvents.append(Event(
+      energy_eV=np.float32(primaries_startEnergy_eV[i]),
+      pka_endpoint_x=np.float32(pka_end_x[0]),
+      pka_endpoint_y=np.float32(pka_end_y[0]),
+      pka_endpoint_z=np.float32(pka_end_z[0]),
+      xs_nm=xs,
+      ys_nm=ys,
+      zs_nm=zs,
+      nVacs=recoil_nVacs,
+      displacedAtoms_Z=recoil_atoms,
+      recoilEnergies_eV=recoil_energies,
+      recoilNums=recoil_nums
+    ))
+    
+  return outputEvents
+
 
 def processFastThrow(primaries_df,initialEnergy_eV,minEnergy,maxEnergy):
   outputEvents = []
@@ -409,7 +444,7 @@ def rotate_points_inplace(x, y, z, R):
     y[i] = R[1, 0]*xi + R[1, 1]*yi + R[1, 2]*zi
     z[i] = R[2, 0]*xi + R[2, 1]*yi + R[2, 2]*zi
 
-def fillTree(tree,branches,output,bin_edges,counts_per_bin,maxEntriesPerBin):
+def fillTree(tree,branches,events,bin_edges,counts_per_bin,maxEntriesPerBin):
   ionEnergy_eV, pka_end_x, pka_end_y, pka_end_z, xs, ys, zs, nVacs, displacedZs, recoilEnergies_eV, recoilNums = branches
 
   def clear_vectors():
@@ -421,91 +456,101 @@ def fillTree(tree,branches,output,bin_edges,counts_per_bin,maxEntriesPerBin):
     recoilEnergies_eV.clear()
     recoilNums.clear()
 
-  for df in output:
-    if df is None or len(df) == 0:
+  for ev in events:
+    ionEnergy_eV[0] = float(ev.energy_eV)
+
+    bin_idx = np.searchsorted(bin_edges, ionEnergy_eV[0], side="right") - 1
+    if bin_idx < 0 or bin_idx >= (len(bin_edges) - 1):
+      continue
+    if counts_per_bin[bin_idx] >= maxEntriesPerBin:
       continue
 
-    for row in df.itertuples(index=False):
-      ionEnergy_eV[0] = float(row.energy_eV)
+    pka_end_x[0] = float(ev.pka_endpoint_x)
+    pka_end_y[0] = float(ev.pka_endpoint_y)
+    pka_end_z[0] = float(ev.pka_endpoint_z)
+    
+    clear_vectors()
 
-      bin_idx = np.searchsorted(bin_edges, ionEnergy_eV[0], side="right") - 1
-      if bin_idx < 0 or bin_idx >= (len(bin_edges) - 1):
-        continue
-      if counts_per_bin[bin_idx] >= maxEntriesPerBin:
-        continue
+    # positions
+    for v in ev.xs_nm:
+      xs.push_back(float(v))
+    for v in ev.ys_nm:
+      ys.push_back(float(v))
+    for v in ev.zs_nm:
+      zs.push_back(float(v))
 
-      pka_end_x[0] = float(row.pka_endpoint_x)
-      pka_end_y[0] = float(row.pka_endpoint_y)
-      pka_end_z[0] = float(row.pka_endpoint_z)
-      
-      clear_vectors()
+    for v in ev.nVacs:
+      nVacs.push_back(float(v)) 
+    for v in ev.displacedAtoms_Z:
+      displacedZs.push_back(int(v)) 
+    for v in ev.recoilEnergies_eV:
+      recoilEnergies_eV.push_back(float(v))
+    for v in ev.recoilNums:
+      recoilNums.push_back(int(v))
 
-      # positions
-      for v in row.xs_nm:
-        xs.push_back(float(v))
-      for v in row.ys_nm:
-        ys.push_back(float(v))
-      for v in row.zs_nm:
-        zs.push_back(float(v))
+    counts_per_bin[bin_idx]+=1
 
-      for v in row.nVacs:
-        nVacs.push_back(float(v)) 
-      for v in row.displacedAtoms_Z:
-        displacedZs.push_back(int(v)) 
-      for v in row.recoilEnergies_eV:
-        recoilEnergies_eV.push_back(float(v))
-      for v in row.recoilNums:
-        recoilNums.push_back(int(v))
+    tree.Fill()
 
-      counts_per_bin[bin_idx]+=1
-
-      tree.Fill()
-
-def fillh5(dsets, events, bin_edges, counts_per_bin, maxEntriesPerBin):
+def fillh5(dsets, events, bin_edges, counts_per_bin, maxEntriesPerBin, j):
   d_ionE, d_pka_end_x, d_pka_end_y, d_pka_end_z, d_xs, d_ys, d_zs, d_nv, d_disZ, d_recoilE, d_recoilNums = dsets
 
-  to_write = []
+  kept = []
   for ev in events:
-    E = float(ev["energy_eV"])
+    E = float(ev.energy_eV)
     bin_idx = int(np.searchsorted(bin_edges, E, side="right") - 1)
     if bin_idx < 0 or bin_idx >= (len(bin_edges) - 1):
       continue
     if counts_per_bin[bin_idx] >= maxEntriesPerBin:
       continue
-    to_write.append((E, ev))
     counts_per_bin[bin_idx] += 1
+    kept.append(ev)
 
-  num_new_events = len(to_write)
-  if num_new_events == 0:
-    return
+  n = len(kept)
+  if n == 0:
+    return j
 
-  old_num_events = d_ionE.shape[0]
-  num_events_total = old_num_events + num_new_events
+  # scalars
+  ionE = np.empty(n, dtype=np.float32)
+  pka_x = np.empty(n, dtype=np.float32)
+  pka_y = np.empty(n, dtype=np.float32)
+  pka_z = np.empty(n, dtype=np.float32)
 
-  d_ionE.resize((num_events_total,))
-  d_pka_end_x.resize((num_events_total,))
-  d_pka_end_y.resize((num_events_total,))
-  d_pka_end_z.resize((num_events_total,))
-  d_xs.resize((num_events_total,))
-  d_ys.resize((num_events_total,))
-  d_zs.resize((num_events_total,))
-  d_nv.resize((num_events_total,))
-  d_disZ.resize((num_events_total,))
-  d_recoilE.resize((num_events_total,))
-  d_recoilNums.resize((num_events_total,))
+  # vlen: build object arrays of ndarrays
+  xs = np.empty(n, dtype=object)
+  ys = np.empty(n, dtype=object)
+  zs = np.empty(n, dtype=object)
+  nv = np.empty(n, dtype=object)
+  disZ = np.empty(n, dtype=object)
+  recoilE = np.empty(n, dtype=object)
+  recoilNums = np.empty(n, dtype=object)
 
-  j = old_num_events
-  for E, ev in to_write:
-    d_ionE[j] = float(E)
-    d_pka_end_x[j] = float(ev["pka_endpoint_x"])
-    d_pka_end_y[j] = float(ev["pka_endpoint_y"])
-    d_pka_end_z[j] = float(ev["pka_endpoint_z"])
-    d_xs[j] = np.asarray(ev["xs_nm"], dtype=np.float32)
-    d_ys[j] = np.asarray(ev["ys_nm"], dtype=np.float32)
-    d_zs[j] = np.asarray(ev["zs_nm"], dtype=np.float32)
-    d_nv[j] = np.asarray(ev["nVacs"], dtype=np.float32)
-    d_disZ[j] = np.asarray(ev["displacedAtoms_Z"], dtype=np.uint8)
-    d_recoilE[j] = np.asarray(ev["recoilEnergies_eV"], dtype=np.float32)
-    d_recoilNums[j] = np.asarray(ev["recoilNums"], dtype=np.int16)
+  for i, ev in enumerate(kept):
+    ionE[i] = ev.energy_eV
+    pka_x[i] = ev.pka_endpoint_x
+    pka_y[i] = ev.pka_endpoint_y
+    pka_z[i] = ev.pka_endpoint_z
 
-    j += 1
+    xs[i] = ev.xs_nm
+    ys[i] = ev.ys_nm
+    zs[i] = ev.zs_nm
+    nv[i] = ev.nVacs
+    disZ[i] = ev.displacedAtoms_Z
+    recoilE[i] = ev.recoilEnergies_eV
+    recoilNums[i] = ev.recoilNums
+
+  sl = slice(j, j + n)
+  d_ionE[sl] = ionE
+  d_pka_end_x[sl] = pka_x
+  d_pka_end_y[sl] = pka_y
+  d_pka_end_z[sl] = pka_z
+
+  d_xs[sl] = list(xs)
+  d_ys[sl] = list(ys)
+  d_zs[sl] = list(zs)
+  d_nv[sl] = list(nv)
+  d_disZ[sl] = list(disZ)
+  d_recoilE[sl] = list(recoilE)
+  d_recoilNums[sl] = list(recoilNums)
+
+  return j + n
