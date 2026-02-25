@@ -28,7 +28,7 @@ runMode = input_data["runMode"]
 energy = input_data["energy_keV"]
 nps = input_data["nps"]
 
-output_base_name = f"{target_name}_{ion_name}"
+output_base_name = f"{target_name}_{ion_name}_{energy}keV"
 
 # Create new SRIM run folder, go there
 runFolder = trimUtils.makeTempSRIMFolder(f"{target_name}_{ion_name}",SRIM_TMP_PATH,SRIM_EXE_PATH)

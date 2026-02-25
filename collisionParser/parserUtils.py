@@ -53,6 +53,7 @@ def read_throw_from_csv(inpFile):
 
   while True:
     line = inpFile.readline()
+    line = line.replace("\x00","")
     #Check for EOF
     if line == "":
       return np.array([]),np.array([]),True
@@ -120,6 +121,8 @@ def read_throw_from_csv_fast(inpFile):
   cascadeNum = 0
   while True:
     line = inpFile.readline()
+    line = line.replace("\x00","")
+
     #Check for EOF
     if line == "":
       return np.array([]),np.array([]),True
@@ -277,6 +280,25 @@ def processThrow(args):
     
   return outputEvents
 
+def formOneEvent(args):
+  primary_steps_arr, cascades_arr, initialEnergy_eV = args
+
+  if primary_steps_arr.shape[0] == 0:
+    return []
+
+  return [Event(
+    energy_eV=np.float32(initialEnergy_eV),
+    pka_endpoint_x=np.float32(primary_steps_arr["x_nm"][-1]),
+    pka_endpoint_y=np.float32(primary_steps_arr["y_nm"][-1]),
+    pka_endpoint_z=np.float32(primary_steps_arr["z_nm"][-1]),
+    xs_nm=cascades_arr["x_nm"].astype(np.float32, copy=False),
+    ys_nm=cascades_arr["y_nm"].astype(np.float32, copy=False),
+    zs_nm=cascades_arr["z_nm"].astype(np.float32, copy=False),
+    nVacs=cascades_arr["nVacs"].astype(np.float32, copy=False),
+    displacedAtoms_Z=cascades_arr["atom"].astype(np.uint8, copy=False),
+    recoilEnergies_eV=cascades_arr["recoilEnergy_eV"].astype(np.float32, copy=False),
+    recoilNums=np.arange(primary_steps_arr.shape[0], dtype=np.int16)
+  )]
 
 def processFastThrow(primaries_df,initialEnergy_eV,minEnergy,maxEnergy):
   outputEvents = []

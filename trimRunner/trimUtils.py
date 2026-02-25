@@ -61,10 +61,12 @@ def checkTrimArgs(data,mass_dict,materials_dict):
     sys.exit()
 
   #Check calc mode is valid
-  if not data["calcMode"] in ["quick","full"]:
+  if not data["calcMode"] in ["quick","full","fast"]:
     print(f"Error! calcMode {data['calcMode']} not valid!")
-    print(f"Valid choices are: {['quick','full']}")
+    print(f"Valid choices are: {['quick','full','fast']}")
     sys.exit()
+  if data["calcMode"]=="fast":
+    data["calcMode"]=="quick"
 
   #Check run mode is valid
   if not data["runMode"] in ["damage","efficiency"]:

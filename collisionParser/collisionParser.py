@@ -22,14 +22,16 @@ def main():
   #We impose artificial limits in the number of recoils we store within given energy ranges. This keeps us from
   #being overwhelmed by low-energy recoils
   spacing = "log"
-  nBins = 1000
+  nBins = 500
   #nBins = 5300 #for alphas
-  maxEntriesPerBin = 100
+  maxEntriesPerBin = 1000
 
   #RAM/CPU settings
   #maxThrowstoProcessAtOnce = 1000 #for alphas
   nCores = 8
   maxCascadesToHold = 1000000 #, only relevant in 'full' mode. 1e6 cascades ~5GB peak RAM usage
+
+  monoMode=False
 
   #################
   ##INPUT PARSING##
@@ -150,23 +152,24 @@ def main():
       primary_steps_arr,cascades_arr,EOF = parserUtils.read_throw_from_csv(inpFile)
     else:
       primary_steps_arr,cascades_arr,EOF = parserUtils.read_throw_from_csv_fast(inpFile)
-
+   
     nThrowsProcessed+=1
     if nThrowsProcessed%500==0:
       print(f"Processed {nThrowsProcessed} throws")
 
     #Check if primary_steps_arr is empty, break
-    if primary_steps_arr.shape[0]==0:
-      break
-    
-    #Add event to our buffer of events to process
-    throwBuffer.append((primary_steps_arr,cascades_arr,initialEnergy_eV))      
-    nCascadesInBuffer += cascades_arr.shape[0]
+    if not primary_steps_arr.shape[0]==0:
+      #Add event to our buffer of events to process
+      throwBuffer.append((primary_steps_arr,cascades_arr,initialEnergy_eV))      
+      nCascadesInBuffer += cascades_arr.shape[0]
 
     #If we reached the threshold of events to process, process them
     if nCascadesInBuffer >= maxCascadesToHold or EOF:
       with mp.Pool(processes=nCores) as pool:
-        primaries_results = tqdm.tqdm(pool.map(parserUtils.processThrow,throwBuffer,chunksize=10))
+        if monoMode:
+          primaries_results = [parserUtils.formOneEvent(t) for t in throwBuffer]
+        else:
+          primaries_results = tqdm.tqdm(pool.map(parserUtils.processThrow,throwBuffer,chunksize=10))
 
       #Write output
       if outputFileType=="root":
