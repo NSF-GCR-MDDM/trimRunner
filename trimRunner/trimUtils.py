@@ -40,7 +40,7 @@ def parseConfig(inpFileName):
   return data
 
 def checkTrimArgs(data,mass_dict,materials_dict):
-  required_keys = ["material","ionSymbol","runMode","calcMode","nps","energy_keV","outputPath"]
+  required_keys = ["material","ionSymbol","runMode","calcMode","nps","energy_keV","outputPath","SRIM_TEMP_FOLDER","SRIM_FOLDER"]
   #Check all top level keys are there
   for key in required_keys:
     if key not in data:
@@ -66,7 +66,7 @@ def checkTrimArgs(data,mass_dict,materials_dict):
     print(f"Valid choices are: {['quick','full','fast']}")
     sys.exit()
   if data["calcMode"]=="fast":
-    data["calcMode"]=="quick"
+    data["calcMode"]="quick"
 
   #Check run mode is valid
   if not data["runMode"] in ["damage","efficiency"]:

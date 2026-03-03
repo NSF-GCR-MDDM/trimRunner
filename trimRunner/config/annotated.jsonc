@@ -1,0 +1,12 @@
+{
+    "material":"Olivine", //Must exist in trimUtils.py, define in "createMaterialsDict():
+    "ionSymbol":"16O",
+    "SRIM_FOLDER": "C:/Users/Sam/Desktop/SRIM_exe", //Folder where SRIM is stored
+    "SRIM_TEMP_FOLDER":"C:/Users/Sam/Desktop/SRIM_tmp", //Temp folder to duplicate SRIM folder to for running multiple instances at once
+    "outputPath":"C:/Users/Sam/Documents/code/trimRunner/data/Olivine_full/txt/", //Location to store output files
+    "runMode":"damage", //"damage" for tracks, "efficiency" for efficiency curves (ion energy vs. probability of no vacancies)
+    "calcMode":"full", //"full" or "fast"
+    "energy_keV":1000, //Starting energy of ion--should be several hundred keV larger than the max energy you care about
+                       //In "efficiency" mode, code automatically stops when efficiency hits 1
+    "nps":1000 //Number of ions to throw.
+}

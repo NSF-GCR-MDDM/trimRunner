@@ -18,15 +18,14 @@ materials_dict = trimUtils.createMaterialsDict()
 input_data = trimUtils.parseConfig(inpFilename)
 trimUtils.checkTrimArgs(input_data,mass_dict,materials_dict)
 
-SRIM_EXE_PATH= "C:/Users/Sam/Desktop/SRIM_exe"
-SRIM_TMP_PATH = "C:/Users/Sam/Desktop/SRIM_tmp"
-
 target_name = input_data["material"]
 ion_name = input_data["ionSymbol"]
 outputFolder = input_data["outputPath"]
 runMode = input_data["runMode"]
 energy = input_data["energy_keV"]
 nps = input_data["nps"]
+SRIM_EXE_PATH= input_data["SRIM_FOLDER"]
+SRIM_TMP_PATH =input_data["SRIM_TEMP_FOLDER"]
 
 output_base_name = f"{target_name}_{ion_name}_{energy}keV"
 
@@ -55,6 +54,7 @@ try:
     os.remove(txt_path)
 
   elif runMode=="efficiency":
+    output_base_name += "_efficiency"
     csv_path = os.path.join(outputFolder, f"{output_base_name}.csv")
     energies = np.arange(0.001,energy,0.001) #keV
     output_efficiencies = []

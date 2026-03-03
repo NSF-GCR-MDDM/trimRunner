@@ -154,9 +154,9 @@ def read_throw_from_csv_fast(inpFile):
          cascadeNum, #cascadeNum
          int(sym_to_Z[lineParts[6]]), #atom, Z of the displaced atom
          float(lineParts[7]), #recoilEnergy_eV
-         float(lineParts[3])*0.1, #x_nm
-         float(lineParts[4])*0.1, #y_nm
-         float(lineParts[5])*0.1, #z_nm
+         float(lineParts[2])*0.1, #x_nm
+         float(lineParts[3])*0.1, #y_nm
+         float(lineParts[4])*0.1, #z_nm
          float(lineParts[8])
       ))
 
