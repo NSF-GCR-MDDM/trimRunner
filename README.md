@@ -143,35 +143,26 @@ Converts `COLLISON.txt` (or `.gz`) into:
 From inside `collisionParser/`:
 
 ```bash
-python collisionParser.py <input.txt|.gz> <output.h5|.root> <fast|full>
+python collisionParser.py <input.txt|.gz> <output.h5|.root>
 ```
 
 Example:
 
 ```bash
-python collisionParser.py LiF_16O_200keV.tar.gz tracks.h5 full
+python collisionParser.py LiF_16O_200keV.tar.gz tracks.h5
 ```
 
 ---
 
 ## Fast vs Full Modes
 
-| Mode | Description |
-|-------|------------|
-| `full` | Parses full cascade output |
-| `fast` | Parses quick/summary format |
-
-The parser mode must match how TRIM was run.
+Parser now autodetects TRIM full damage cascades mode vs. fast mode.
 
 ---
 
 ## Artificial Energy Binning
 
-TRIM output is not energy-binned.  
-The parser imposes artificial binning to:
-
-- Limit file size
-- Prevent low-energy recoils from dominating storage
+TRIM output is not energy-binned. The parser imposes artificial binning (restricting number of written events in specific energy regions) to  limit file size, and prevent low-energy recoils from dominating the output.
 
 Key parameters (inside `collisionParser.py`):
 
@@ -190,17 +181,17 @@ Key parameters (inside `collisionParser.py`):
 
 Each stored event contains:
 
-- `ionEnergy_eV`
-- `pka_endpoint_x_nm`
-- `pka_endpoint_y_nm`
-- `pka_endpoint_z_nm`
-- `xs_nm`
-- `ys_nm`
-- `zs_nm`
-- `nVacs`
-- `displacedAtoms_Z`
-- `recoilEnergies_eV`
-- `recoilNums`
+- `ionEnergy_eV` - float
+- `pka_endpoint_x_nm` - float
+- `pka_endpoint_y_nm` - float
+- `pka_endpoint_z_nm` - float
+- `xs_nm` - vector of floats
+- `ys_nm` - vector of floats
+- `zs_nm` - vector of floats
+- `nVacs` - vector of floats
+- `displacedAtoms_Z` - int
+- `recoilEnergies_eV` - float
+- `recoilNums` - vector of ints (ordering of cascades for each incident ion)
 
 Coordinates are rotated so that the primary recoil direction aligns with +X.
 
