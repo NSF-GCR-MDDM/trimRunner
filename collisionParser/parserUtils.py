@@ -11,6 +11,17 @@ def getInitialEnergy(inpFile):
       end = line.find("keV")
       throwEnergy_eV = float(line[start:end].strip())*1e3
       return throwEnergy_eV
+    
+def getMode(inpFile,maxLines=500):
+  mode="fast"
+  for iline,line in enumerate(inpFile):
+    if "New Cascade" in line:
+      mode="full"
+    if iline>maxLines:
+      break
+  inpFile.seek(0)
+  print(f"Auto-detected mode is {mode}")
+  return mode
 
 PRIMARY_DTYPE = np.dtype([
   ("ionNum", "i4"),

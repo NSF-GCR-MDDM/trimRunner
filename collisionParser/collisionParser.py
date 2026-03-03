@@ -27,17 +27,16 @@ def main():
   maxEntriesPerBin = 20000
 
   #RAM/CPU settings
-  #maxThrowstoProcessAtOnce = 1000 #for alphas
   nCores = 8
   maxCascadesToHold = 1000000 #, only relevant in 'full' mode. 1e6 cascades ~5GB peak RAM usage
 
-  monoMode=False
+  monoMode=False #For not doing the fancy downstream ion track generation, i.e. pure mono output
 
   #################
   ##INPUT PARSING##
   #################
-  if len(sys.argv)<4:
-    print("Error! Usage is:\n\n\tpython <input file .gz or .txt> <output file name .h5 or .root> <fast or full>\n\nExiting!")
+  if len(sys.argv)<3:
+    print("Error! Usage is:\n\n\tpython <input file .gz or .txt> <output file name .h5 or .root>\n\nExiting!")
     sys.exit()
 
   inpFileName = sys.argv[1]
@@ -60,16 +59,16 @@ def main():
   outDir = os.path.dirname(os.path.abspath(outputFileName))
   if outDir and not os.path.isdir(outDir):
     os.makedirs(outDir, exist_ok=True)
-
-  mode = sys.argv[3]
-  if not mode in ["fast","full"]:
-    print(f"Error! Third input arg must be 'fast' or 'full'.\nYou pass in {mode}!\n")
-    sys.exit
   
   ######################
   ##GET INITIAL ENERGY##
   ######################
   initialEnergy_eV = parserUtils.getInitialEnergy(inpFile)
+
+  ###############################
+  ##DETERMINE FAST OR FULL MODE##
+  ###############################
+  mode = parserUtils.getMode(inpFile)
 
   ######################################################
   ##DETERMINE MAX ENTRIES TO BE WRITTEN TO OUTPUT FILE##
