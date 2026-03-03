@@ -22,9 +22,9 @@ def main():
 
   #We impose artificial limits in the number of recoils we store within given energy ranges. This keeps us from
   #being overwhelmed by low-energy recoils
-  spacing = "linear"
-  nBins = 300
-  maxEntriesPerBin = 20000
+  spacing = "log"
+  nBins = 600
+  maxEntriesPerBin = 2000
 
   #RAM/CPU settings
   nCores = 8
@@ -55,6 +55,8 @@ def main():
     outputFileType = "h5"
   else:
     print(f"Error! Acceptable output file types are .root or .h5.\nYou passed in {outputFileName}!\n")
+    sys.exit()
+    
   #Get base path of output name, make if doesn't exist
   outDir = os.path.dirname(os.path.abspath(outputFileName))
   if outDir and not os.path.isdir(outDir):
