@@ -27,7 +27,7 @@ nps = input_data["nps"]
 SRIM_EXE_PATH= input_data["SRIM_FOLDER"]
 SRIM_TMP_PATH =input_data["SRIM_TEMP_FOLDER"]
 
-output_base_name = f"{target_name}_{ion_name}_{energy}keV"
+output_base_name = f"{target_name}_{ion_name}"
 
 # Create new SRIM run folder, go there
 runFolder = trimUtils.makeTempSRIMFolder(f"{target_name}_{ion_name}",SRIM_TMP_PATH,SRIM_EXE_PATH)
@@ -35,6 +35,7 @@ try:
   os.chdir(runFolder)
 
   if runMode=="damage":
+    output_base_name += "_{energy}keV"
     txt_path = os.path.join(outputFolder, f"{output_base_name}.txt")
     tar_path = os.path.join(outputFolder, f"{output_base_name}.tar.gz")
     if os.path.exists(txt_path):

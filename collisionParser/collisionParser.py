@@ -17,14 +17,13 @@ def main():
   #Only save recoils with energies in this range. In general you should start your TRIM run at least a few hundred keV
   #above the max range to allow for 'burn in'
   energyRange_eV = [1,300e3] 
-  #[3.7e7,9e6] #for alphas for decay chain mode
+  #[3.7e7,9e6] #for alphas from decay chains
   #[71e3,73e3] #for 72 keV 234Th
 
   #We impose artificial limits in the number of recoils we store within given energy ranges. This keeps us from
   #being overwhelmed by low-energy recoils
   spacing = "linear"
-  nBins = 1
-  #nBins = 5300 #for alphas
+  nBins = 300
   maxEntriesPerBin = 20000
 
   #RAM/CPU settings
