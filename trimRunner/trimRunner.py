@@ -35,7 +35,7 @@ try:
   os.chdir(runFolder)
 
   if runMode=="damage":
-    output_base_name += "_{energy}keV"
+    output_base_name += f"_{energy}keV"
     txt_path = os.path.join(outputFolder, f"{output_base_name}.txt")
     tar_path = os.path.join(outputFolder, f"{output_base_name}.tar.gz")
     if os.path.exists(txt_path):
